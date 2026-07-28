@@ -2,8 +2,10 @@ use core::mem;
 
 use crate::endian::*;
 use crate::macho;
-use crate::write::util::{align, write_pod};
-use crate::write::{Error, Result, StringTable, WritableBuffer};
+#[cfg(feature = "read_core")]
+use crate::read;
+use crate::write::util::align;
+use crate::write::{Error, Result, StringTable, WritableBuffer, WritableBufferExt};
 
 /// Native endian version of [`macho::MachHeader64`].
 #[allow(missing_docs)]
@@ -15,6 +17,21 @@ pub struct MachHeader {
     pub ncmds: u32,
     pub sizeofcmds: u32,
     pub flags: macho::FileFlags,
+}
+
+#[cfg(feature = "read_core")]
+impl MachHeader {
+    /// Convert from a raw file header.
+    pub fn from_raw<Mach: read::macho::MachHeader>(endian: Mach::Endian, header: &Mach) -> Self {
+        MachHeader {
+            cputype: header.cputype(endian),
+            cpusubtype: header.cpusubtype(endian),
+            filetype: header.filetype(endian),
+            ncmds: header.ncmds(endian),
+            sizeofcmds: header.sizeofcmds(endian),
+            flags: header.flags(endian),
+        }
+    }
 }
 
 /// Native endian version of [`macho::SegmentCommand64`].
@@ -30,6 +47,24 @@ pub struct SegmentCommand {
     pub initprot: macho::VmProt,
     pub nsects: u32,
     pub flags: macho::SegmentFlags,
+}
+
+#[cfg(feature = "read_core")]
+impl SegmentCommand {
+    /// Convert from a raw segment command.
+    pub fn from_raw<S: read::macho::Segment>(endian: S::Endian, segment: &S) -> Self {
+        SegmentCommand {
+            segname: *segment.segname(),
+            vmaddr: segment.vmaddr(endian).into(),
+            vmsize: segment.vmsize(endian).into(),
+            fileoff: segment.fileoff(endian).into(),
+            filesize: segment.filesize(endian).into(),
+            maxprot: segment.maxprot(endian),
+            initprot: segment.initprot(endian),
+            nsects: segment.nsects(endian),
+            flags: segment.flags(endian),
+        }
+    }
 }
 
 /// Native endian version of [`macho::Section64`].
@@ -50,6 +85,27 @@ pub struct SectionHeader {
     pub reserved3: u32,
 }
 
+#[cfg(feature = "read_core")]
+impl SectionHeader {
+    /// Convert from a raw section header.
+    pub fn from_raw<S: read::macho::Section>(endian: S::Endian, section: &S) -> Self {
+        SectionHeader {
+            sectname: *section.sectname(),
+            segname: *section.segname(),
+            addr: section.addr(endian).into(),
+            size: section.size(endian).into(),
+            offset: section.offset(endian),
+            align: section.align(endian),
+            reloff: section.reloff(endian),
+            nreloc: section.nreloc(endian),
+            flags: section.flags(endian),
+            reserved1: section.reserved1(endian),
+            reserved2: section.reserved2(endian),
+            reserved3: section.reserved3(endian),
+        }
+    }
+}
+
 /// Native endian version of [`macho::SymtabCommand`].
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
@@ -58,6 +114,19 @@ pub struct SymtabCommand {
     pub nsyms: u32,
     pub stroff: u32,
     pub strsize: u32,
+}
+
+#[cfg(feature = "read_core")]
+impl SymtabCommand {
+    /// Convert from a raw symtab load command.
+    pub fn from_raw<E: Endian>(endian: E, command: &macho::SymtabCommand<E>) -> Self {
+        SymtabCommand {
+            symoff: command.symoff.get(endian),
+            nsyms: command.nsyms.get(endian),
+            stroff: command.stroff.get(endian),
+            strsize: command.strsize.get(endian),
+        }
+    }
 }
 
 /// Native endian version of [`macho::DysymtabCommand`].
@@ -84,6 +153,33 @@ pub struct DysymtabCommand {
     pub nlocrel: u32,
 }
 
+#[cfg(feature = "read_core")]
+impl DysymtabCommand {
+    /// Convert from a raw dynamic symtab load command.
+    pub fn from_raw<E: Endian>(endian: E, command: &macho::DysymtabCommand<E>) -> Self {
+        DysymtabCommand {
+            ilocalsym: command.ilocalsym.get(endian),
+            nlocalsym: command.nlocalsym.get(endian),
+            iextdefsym: command.iextdefsym.get(endian),
+            nextdefsym: command.nextdefsym.get(endian),
+            iundefsym: command.iundefsym.get(endian),
+            nundefsym: command.nundefsym.get(endian),
+            tocoff: command.tocoff.get(endian),
+            ntoc: command.ntoc.get(endian),
+            modtaboff: command.modtaboff.get(endian),
+            nmodtab: command.nmodtab.get(endian),
+            extrefsymoff: command.extrefsymoff.get(endian),
+            nextrefsyms: command.nextrefsyms.get(endian),
+            indirectsymoff: command.indirectsymoff.get(endian),
+            nindirectsyms: command.nindirectsyms.get(endian),
+            extreloff: command.extreloff.get(endian),
+            nextrel: command.nextrel.get(endian),
+            locreloff: command.locreloff.get(endian),
+            nlocrel: command.nlocrel.get(endian),
+        }
+    }
+}
+
 /// Native endian version of [`macho::Nlist64`].
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
@@ -93,6 +189,20 @@ pub struct Nlist {
     pub n_sect: u8,
     pub n_desc: macho::SymbolDesc,
     pub n_value: u64,
+}
+
+#[cfg(feature = "read_core")]
+impl Nlist {
+    /// Convert from a raw symbol.
+    pub fn from_raw<N: read::macho::Nlist>(endian: N::Endian, nlist: &N) -> Self {
+        Nlist {
+            n_strx: nlist.n_strx(endian),
+            n_type: nlist.n_type(),
+            n_sect: nlist.n_sect(),
+            n_desc: nlist.n_desc(endian),
+            n_value: nlist.n_value(endian).into(),
+        }
+    }
 }
 
 /// Native endian version of [`macho::DylibCommand`].
@@ -106,6 +216,27 @@ pub struct DylibCommand<'data> {
     pub compatibility_version: macho::Version,
 }
 
+#[cfg(feature = "read_core")]
+impl<'data> DylibCommand<'data> {
+    /// Convert from a raw dylib load command.
+    ///
+    /// `name` is the string referenced by the `dylib.name` field. It can be obtained
+    /// using [`read::macho::LoadCommandData::string`].
+    pub fn from_raw<E: Endian>(
+        endian: E,
+        command: &macho::DylibCommand<E>,
+        name: &'data [u8],
+    ) -> Self {
+        DylibCommand {
+            cmd: command.cmd.get(endian),
+            name,
+            timestamp: command.dylib.timestamp.get(endian),
+            current_version: command.dylib.current_version.get(endian),
+            compatibility_version: command.dylib.compatibility_version.get(endian),
+        }
+    }
+}
+
 /// Native endian version of [`macho::BuildVersionCommand`].
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
@@ -114,6 +245,54 @@ pub struct BuildVersionCommand {
     pub minos: macho::Version,
     pub sdk: macho::Version,
     pub ntools: u32,
+}
+
+#[cfg(feature = "read_core")]
+impl BuildVersionCommand {
+    /// Convert from a raw build version load command.
+    pub fn from_raw<E: Endian>(endian: E, command: &macho::BuildVersionCommand<E>) -> Self {
+        BuildVersionCommand {
+            platform: command.platform.get(endian),
+            minos: command.minos.get(endian),
+            sdk: command.sdk.get(endian),
+            ntools: command.ntools.get(endian),
+        }
+    }
+}
+
+/// Native endian version of [`macho::DyldInfoCommand`].
+#[allow(missing_docs)]
+#[derive(Debug, Clone)]
+pub struct DyldInfoCommand {
+    pub rebase_off: u32,
+    pub rebase_size: u32,
+    pub bind_off: u32,
+    pub bind_size: u32,
+    pub weak_bind_off: u32,
+    pub weak_bind_size: u32,
+    pub lazy_bind_off: u32,
+    pub lazy_bind_size: u32,
+    pub export_off: u32,
+    pub export_size: u32,
+}
+
+#[cfg(feature = "read_core")]
+impl DyldInfoCommand {
+    /// Convert from a raw dyld info load command.
+    pub fn from_raw<E: Endian>(endian: E, command: &macho::DyldInfoCommand<E>) -> Self {
+        DyldInfoCommand {
+            rebase_off: command.rebase_off.get(endian),
+            rebase_size: command.rebase_size.get(endian),
+            bind_off: command.bind_off.get(endian),
+            bind_size: command.bind_size.get(endian),
+            weak_bind_off: command.weak_bind_off.get(endian),
+            weak_bind_size: command.weak_bind_size.get(endian),
+            lazy_bind_off: command.lazy_bind_off.get(endian),
+            lazy_bind_size: command.lazy_bind_size.get(endian),
+            export_off: command.export_off.get(endian),
+            export_size: command.export_size.get(endian),
+        }
+    }
 }
 
 /// A helper for encoding headers and data when writing a Mach-O file.
@@ -181,7 +360,7 @@ impl<E: Endian> Encoder<E> {
                 flags: U32::new(endian, header.flags),
                 reserved: U32::default(),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         } else {
             let magic = if endian.is_big_endian() {
                 macho::MH_MAGIC
@@ -197,7 +376,7 @@ impl<E: Endian> Encoder<E> {
                 sizeofcmds: U32::new(endian, header.sizeofcmds),
                 flags: U32::new(endian, header.flags),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         }
     }
 
@@ -225,7 +404,7 @@ impl<E: Endian> Encoder<E> {
             cmd: U32::new(endian, cmd),
             cmdsize: U32::new(endian, cmdsize),
         };
-        write_pod(buffer, command);
+        buffer.write_pod(command);
         buffer.write_bytes(data);
     }
 
@@ -263,7 +442,7 @@ impl<E: Endian> Encoder<E> {
                 nsects: U32::new(endian, segment.nsects),
                 flags: U32::new(endian, segment.flags),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         } else {
             let data = &macho::SegmentCommand32 {
                 cmd: U32::new(endian, macho::LC_SEGMENT),
@@ -278,7 +457,7 @@ impl<E: Endian> Encoder<E> {
                 nsects: U32::new(endian, segment.nsects),
                 flags: U32::new(endian, segment.flags),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         }
     }
 
@@ -316,7 +495,7 @@ impl<E: Endian> Encoder<E> {
                 reserved2: U32::new(endian, section.reserved2),
                 reserved3: U32::new(endian, section.reserved3),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         } else {
             let data = &macho::Section32 {
                 sectname: section.sectname,
@@ -331,7 +510,7 @@ impl<E: Endian> Encoder<E> {
                 reserved1: U32::new(endian, section.reserved1),
                 reserved2: U32::new(endian, section.reserved2),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         }
     }
 
@@ -348,7 +527,7 @@ impl<E: Endian> Encoder<E> {
         buffer: &mut W,
         rel: &macho::RelocationInfo,
     ) {
-        write_pod(buffer, &rel.relocation(self.endian));
+        buffer.write_pod(&rel.relocation(self.endian));
     }
 
     /// Return the size of a symtab load command.
@@ -371,7 +550,7 @@ impl<E: Endian> Encoder<E> {
             stroff: U32::new(endian, symtab.stroff),
             strsize: U32::new(endian, symtab.strsize),
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
     }
 
     /// Return the size of a symbol.
@@ -396,7 +575,7 @@ impl<E: Endian> Encoder<E> {
                 n_desc: U16::new(endian, nlist.n_desc),
                 n_value: U64::new(endian, nlist.n_value),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         } else {
             let data = &macho::Nlist32 {
                 n_strx: U32::new(endian, nlist.n_strx),
@@ -405,7 +584,7 @@ impl<E: Endian> Encoder<E> {
                 n_desc: U16::new(endian, nlist.n_desc),
                 n_value: U32::new(endian, nlist.n_value as u32),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         }
     }
 
@@ -422,7 +601,7 @@ impl<E: Endian> Encoder<E> {
         buffer.write_bytes(&[0]);
         let len = strtab.write(buffer, 1)? as u64;
         let aligned_len = align(len, self.address_size());
-        buffer.resize(buffer.len() + (aligned_len - len));
+        buffer.write_zeros(aligned_len - len);
         u32::try_from(aligned_len).map_err(|_| Error("string table size overflow".into()))
     }
 
@@ -460,7 +639,7 @@ impl<E: Endian> Encoder<E> {
             locreloff: U32::new(endian, dysymtab.locreloff),
             nlocrel: U32::new(endian, dysymtab.nlocrel),
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
     }
 
     /// Return the size of an indirect symbol for a dynamic symtab load command.
@@ -474,7 +653,7 @@ impl<E: Endian> Encoder<E> {
         buffer: &mut W,
         symbol: macho::IndirectSymbol,
     ) {
-        write_pod(buffer, &U32::new(self.endian, symbol));
+        buffer.write_u32(self.endian, symbol);
     }
 
     /// Return the size of a dylib command.
@@ -493,7 +672,6 @@ impl<E: Endian> Encoder<E> {
         buffer: &mut W,
         dylib: &DylibCommand<'_>,
     ) {
-        let offset = buffer.len();
         let cmdsize = self.dylib_command_size(dylib.name.len());
         let name_offset = mem::size_of::<macho::DylibCommand<Endianness>>() as u32;
         let endian = self.endian;
@@ -509,9 +687,10 @@ impl<E: Endian> Encoder<E> {
                 compatibility_version: U32::new(endian, dylib.compatibility_version),
             },
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
         buffer.write_bytes(dylib.name);
-        buffer.resize(offset + cmdsize);
+        let written = name_offset as u64 + dylib.name.len() as u64;
+        buffer.write_zeros(cmdsize - written);
     }
 
     /// Return the size of a build version load command.
@@ -538,7 +717,7 @@ impl<E: Endian> Encoder<E> {
             sdk: U32::new(endian, version.sdk),
             ntools: U32::new(endian, version.ntools),
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
     }
 
     /// Write a build tool version.
@@ -555,7 +734,7 @@ impl<E: Endian> Encoder<E> {
             tool: U32::new(endian, tool),
             version: U32::new(endian, version),
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
     }
 
     /// Return the size of a load command referencing linkedit data.
@@ -578,6 +757,247 @@ impl<E: Endian> Encoder<E> {
             dataoff: U32::new(endian, dataoff),
             datasize: U32::new(endian, datasize),
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
+    }
+
+    /// Return the size of a load command referencing dyld information.
+    pub fn dyld_info_command_size(self) -> u64 {
+        mem::size_of::<macho::DyldInfoCommand<Endianness>>() as u64
+    }
+
+    /// Write a load command referencing dyld information.
+    pub fn dyld_info_command<W: WritableBuffer + ?Sized>(
+        self,
+        buffer: &mut W,
+        cmd: macho::LoadCommandType,
+        info: &DyldInfoCommand,
+    ) {
+        let endian = self.endian;
+        let data = &macho::DyldInfoCommand {
+            cmd: U32::new(endian, cmd),
+            cmdsize: U32::new(endian, self.dyld_info_command_size() as u32),
+            rebase_off: U32::new(endian, info.rebase_off),
+            rebase_size: U32::new(endian, info.rebase_size),
+            bind_off: U32::new(endian, info.bind_off),
+            bind_size: U32::new(endian, info.bind_size),
+            weak_bind_off: U32::new(endian, info.weak_bind_off),
+            weak_bind_size: U32::new(endian, info.weak_bind_size),
+            lazy_bind_off: U32::new(endian, info.lazy_bind_off),
+            lazy_bind_size: U32::new(endian, info.lazy_bind_size),
+            export_off: U32::new(endian, info.export_off),
+            export_size: U32::new(endian, info.export_size),
+        };
+        buffer.write_pod(data);
+    }
+}
+
+/// Native endian version of [`macho::CsCodeDirectoryV0`].
+#[allow(missing_docs)]
+#[derive(Debug, Default, Clone)]
+pub struct CodeDirectory {
+    pub length: u32,
+    pub version: macho::CsVersion,
+    pub flags: macho::CsFlags,
+    pub hash_offset: u32,
+    pub ident_offset: u32,
+    pub n_special_slots: u32,
+    pub n_code_slots: u32,
+    pub code_limit: u64,
+    pub hash_size: u8,
+    pub hash_type: macho::CsHashType,
+    pub platform: u8,
+    pub page_size: u8,
+    pub scatter_offset: u32,
+    pub team_offset: u32,
+    pub exec_seg_base: u64,
+    pub exec_seg_limit: u64,
+    pub exec_seg_flags: macho::CsExecSegFlags,
+}
+
+#[cfg(feature = "read_core")]
+impl CodeDirectory {
+    /// Convert from a raw code directory.
+    ///
+    /// Fields that are not present for the version of the code directory are set to 0.
+    pub fn from_raw(code_directory: &read::macho::CodeDirectory<'_>) -> Self {
+        let header = code_directory.header();
+        let exec_seg = code_directory.exec_seg();
+        CodeDirectory {
+            length: header.length.get(BigEndian),
+            version: header.version.get(BigEndian),
+            flags: header.flags.get(BigEndian),
+            hash_offset: header.hash_offset.get(BigEndian),
+            ident_offset: header.ident_offset.get(BigEndian),
+            n_special_slots: header.n_special_slots.get(BigEndian),
+            n_code_slots: header.n_code_slots.get(BigEndian),
+            code_limit: code_directory.code_limit(),
+            hash_size: header.hash_size,
+            hash_type: header.hash_type,
+            platform: header.platform,
+            page_size: header.page_size,
+            scatter_offset: code_directory.scatter_offset().unwrap_or(0),
+            team_offset: code_directory.team_offset().unwrap_or(0),
+            exec_seg_base: exec_seg.map_or(0, |v| v.exec_seg_base.get(BigEndian)),
+            exec_seg_limit: exec_seg.map_or(0, |v| v.exec_seg_limit.get(BigEndian)),
+            exec_seg_flags: exec_seg.map_or(macho::CsExecSegFlags(0), |v| {
+                v.exec_seg_flags.get(BigEndian)
+            }),
+        }
+    }
+}
+
+/// A helper for encoding code signatures.
+#[derive(Debug, Clone, Copy)]
+pub struct CodeSignatureEncoder;
+
+impl CodeSignatureEncoder {
+    /// Return the size of a super blob header.
+    pub fn super_blob_size(self) -> u32 {
+        mem::size_of::<macho::CsSuperBlob>() as u32
+    }
+
+    /// Write a code signature super blob header.
+    pub fn signature_super_blob<W: WritableBuffer + ?Sized>(
+        self,
+        buffer: &mut W,
+        length: u32,
+        count: u32,
+    ) {
+        let data = &macho::CsSuperBlob {
+            magic: U32::new(BigEndian, macho::CSMAGIC_EMBEDDED_SIGNATURE),
+            length: U32::new(BigEndian, length),
+            count: U32::new(BigEndian, count),
+        };
+        buffer.write_pod(data);
+    }
+
+    /// Write a requirements super blob header.
+    pub fn requirements_super_blob<W: WritableBuffer + ?Sized>(
+        self,
+        buffer: &mut W,
+        length: u32,
+        count: u32,
+    ) {
+        let data = &macho::CsSuperBlob {
+            magic: U32::new(BigEndian, macho::CSMAGIC_REQUIREMENTS),
+            length: U32::new(BigEndian, length),
+            count: U32::new(BigEndian, count),
+        };
+        buffer.write_pod(data);
+    }
+
+    /// Return the size of a blob index entry.
+    pub fn blob_index_size(self) -> u32 {
+        mem::size_of::<macho::CsBlobIndex>() as u32
+    }
+
+    /// Write a code signature blob index entry.
+    pub fn blob_index<W: WritableBuffer + ?Sized>(
+        self,
+        buffer: &mut W,
+        slot: macho::CsSlot,
+        offset: u32,
+    ) {
+        let data = &macho::CsBlobIndex {
+            slot: U32::new(BigEndian, slot),
+            offset: U32::new(BigEndian, offset),
+        };
+        buffer.write_pod(data);
+    }
+
+    /// Return the size of a generic blob header.
+    pub fn generic_blob_size(self) -> u32 {
+        mem::size_of::<macho::CsGenericBlob>() as u32
+    }
+
+    /// Write a generic blob header.
+    pub fn generic_blob<W: WritableBuffer + ?Sized>(self, buffer: &mut W, magic: u32, length: u32) {
+        let header = &macho::CsGenericBlob {
+            magic: U32::new(BigEndian, magic),
+            length: U32::new(BigEndian, length),
+        };
+        buffer.write_pod(header);
+    }
+
+    /// Return the size of a code directory header for the given version.
+    ///
+    /// This does not include data such as the identifier, team identifier,
+    /// hash slots, or scatter vector.
+    ///
+    /// Only versions <= [`macho::CS_SUPPORTSEXECSEG`] are supported.
+    pub fn code_directory_size(self, version: macho::CsVersion) -> u32 {
+        debug_assert!(version <= macho::CS_SUPPORTSEXECSEG);
+        let mut size = mem::size_of::<macho::CsCodeDirectoryV0>();
+        if version >= macho::CS_SUPPORTSSCATTER {
+            size += mem::size_of::<macho::CsCodeDirectoryV1>();
+        }
+        if version >= macho::CS_SUPPORTSTEAMID {
+            size += mem::size_of::<macho::CsCodeDirectoryV2>();
+        }
+        if version >= macho::CS_SUPPORTSCODELIMIT64 {
+            size += mem::size_of::<macho::CsCodeDirectoryV3>();
+        }
+        if version >= macho::CS_SUPPORTSEXECSEG {
+            size += mem::size_of::<macho::CsCodeDirectoryV4>();
+        }
+        size as u32
+    }
+
+    /// Write a code directory header.
+    ///
+    /// The version is used to determine which fields to write.
+    /// Only versions <= [`macho::CS_SUPPORTSEXECSEG`] are supported.
+    pub fn code_directory<W: WritableBuffer + ?Sized>(self, buffer: &mut W, cd: &CodeDirectory) {
+        debug_assert!(cd.version <= macho::CS_SUPPORTSEXECSEG);
+        let (code_limit, code_limit64) = if cd.code_limit > u64::from(u32::MAX) {
+            debug_assert!(cd.version >= macho::CS_SUPPORTSCODELIMIT64);
+            (u32::MAX, cd.code_limit)
+        } else {
+            (cd.code_limit as u32, 0)
+        };
+        let v0 = macho::CsCodeDirectoryV0 {
+            magic: U32::new(BigEndian, macho::CSMAGIC_CODEDIRECTORY),
+            length: U32::new(BigEndian, cd.length),
+            version: U32::new(BigEndian, cd.version),
+            flags: U32::new(BigEndian, cd.flags),
+            hash_offset: U32::new(BigEndian, cd.hash_offset),
+            ident_offset: U32::new(BigEndian, cd.ident_offset),
+            n_special_slots: U32::new(BigEndian, cd.n_special_slots),
+            n_code_slots: U32::new(BigEndian, cd.n_code_slots),
+            code_limit: U32::new(BigEndian, code_limit),
+            hash_size: cd.hash_size,
+            hash_type: cd.hash_type,
+            platform: cd.platform,
+            page_size: cd.page_size,
+            spare2: U32::new(BigEndian, 0),
+        };
+        buffer.write_pod(&v0);
+        if cd.version >= macho::CS_SUPPORTSSCATTER {
+            let v1 = macho::CsCodeDirectoryV1 {
+                scatter_offset: U32::new(BigEndian, cd.scatter_offset),
+            };
+            buffer.write_pod(&v1);
+        }
+        if cd.version >= macho::CS_SUPPORTSTEAMID {
+            let v2 = macho::CsCodeDirectoryV2 {
+                team_offset: U32::new(BigEndian, cd.team_offset),
+            };
+            buffer.write_pod(&v2);
+        }
+        if cd.version >= macho::CS_SUPPORTSCODELIMIT64 {
+            let v3 = macho::CsCodeDirectoryV3 {
+                spare3: U32::new(BigEndian, 0),
+                code_limit64: U64::new(BigEndian, code_limit64),
+            };
+            buffer.write_pod(&v3);
+        }
+        if cd.version >= macho::CS_SUPPORTSEXECSEG {
+            let v4 = macho::CsCodeDirectoryV4 {
+                exec_seg_base: U64::new(BigEndian, cd.exec_seg_base),
+                exec_seg_limit: U64::new(BigEndian, cd.exec_seg_limit),
+                exec_seg_flags: U64::new(BigEndian, cd.exec_seg_flags),
+            };
+            buffer.write_pod(&v4);
+        }
     }
 }

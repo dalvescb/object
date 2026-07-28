@@ -98,7 +98,8 @@ unaligned = []
 #=======================================
 # Unstable features. Breaking changes in these features will not affect versioning.
 unstable = []
-unstable-all = ["all", "unstable"]
+goff = []
+unstable-all = ["all", "unstable", "goff"]
 
 #=======================================
 # Internal feature, only used when building as part of libstd, not part of the

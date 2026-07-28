@@ -1,18 +1,18 @@
-use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use crate::endian::LittleEndian as LE;
 use crate::pod::Pod;
 use crate::read::{
-    self, Architecture, Export, FileFlags, Import, NoDynamicRelocationIterator, Object, ObjectKind,
-    ObjectSection, ReadError, ReadRef, Result, SectionIndex, SubArchitecture, SymbolIndex,
+    self, Architecture, FileFlags, NoDynamicRelocationIterator, NoExportIterator, NoImportIterator,
+    NoImportLibraryIterator, Object, ObjectKind, ObjectSection, ReadError, ReadRef, Result,
+    SectionIndex, SubArchitecture, SymbolIndex,
 };
 use crate::{SkipDebugList, pe};
 
 use super::{
     CoffComdat, CoffComdatIterator, CoffSection, CoffSectionIterator, CoffSegment,
-    CoffSegmentIterator, CoffSymbol, CoffSymbolIterator, CoffSymbolTable, ImageSymbol,
-    SectionTable, SymbolTable,
+    CoffSegmentIterator, CoffSymbol, CoffSymbolIterator, CoffSymbolTable, SectionTable, Symbol,
+    SymbolTable,
 };
 
 /// The common parts of `PeFile` and `CoffFile`.
@@ -140,6 +140,21 @@ where
     where
         Self: 'file,
         'data: 'file;
+    type ImportLibraryIterator<'file>
+        = NoImportLibraryIterator<'data, 'file, R>
+    where
+        Self: 'file,
+        'data: 'file;
+    type ImportIterator<'file>
+        = NoImportIterator<'data, 'file, R>
+    where
+        Self: 'file,
+        'data: 'file;
+    type ExportIterator<'file>
+        = NoExportIterator<'data, 'file, R>
+    where
+        Self: 'file,
+        'data: 'file;
 
     fn architecture(&self) -> Architecture {
         match self.header.machine() {
@@ -247,15 +262,20 @@ where
     }
 
     #[inline]
-    fn imports(&self) -> Result<Vec<Import<'data>>> {
-        // TODO: this could return undefined symbols, but not needed yet.
-        Ok(Vec::new())
+    fn import_libraries(&self) -> Result<Self::ImportLibraryIterator<'_>> {
+        Ok(Default::default())
     }
 
     #[inline]
-    fn exports(&self) -> Result<Vec<Export<'data>>> {
+    fn imports(&self) -> Result<Self::ImportIterator<'_>> {
+        // TODO: this could return undefined symbols, but not needed yet.
+        Ok(Default::default())
+    }
+
+    #[inline]
+    fn exports(&self) -> Result<Self::ExportIterator<'_>> {
         // TODO: this could return global symbols, but not needed yet.
-        Ok(Vec::new())
+        Ok(Default::default())
     }
 
     fn has_debug_symbols(&self) -> bool {
@@ -290,9 +310,9 @@ pub fn anon_object_class_id<'data, R: ReadRef<'data>>(data: R) -> Result<pe::Cls
 
 /// A trait for generic access to [`pe::ImageFileHeader`] and [`pe::AnonObjectHeaderBigobj`].
 #[allow(missing_docs)]
-pub trait CoffHeader: Debug + Pod {
-    type ImageSymbol: ImageSymbol;
-    type ImageSymbolBytes: Debug + Pod;
+pub trait CoffHeader: Debug + Pod + read::private::Sealed {
+    type Symbol: Symbol;
+    type SymbolBytes: Debug + Pod;
 
     /// Return true if this type is [`pe::AnonObjectHeaderBigobj`].
     ///
@@ -337,9 +357,11 @@ pub trait CoffHeader: Debug + Pod {
     }
 }
 
+impl read::private::Sealed for pe::ImageFileHeader {}
+
 impl CoffHeader for pe::ImageFileHeader {
-    type ImageSymbol = pe::ImageSymbol;
-    type ImageSymbolBytes = pe::ImageSymbolBytes;
+    type Symbol = pe::ImageSymbol;
+    type SymbolBytes = pe::ImageSymbolBytes;
 
     fn is_type_bigobj() -> bool {
         false
@@ -380,9 +402,11 @@ impl CoffHeader for pe::ImageFileHeader {
     }
 }
 
+impl read::private::Sealed for pe::AnonObjectHeaderBigobj {}
+
 impl CoffHeader for pe::AnonObjectHeaderBigobj {
-    type ImageSymbol = pe::ImageSymbolEx;
-    type ImageSymbolBytes = pe::ImageSymbolExBytes;
+    type Symbol = pe::ImageSymbolEx;
+    type SymbolBytes = pe::ImageSymbolExBytes;
 
     fn is_type_bigobj() -> bool {
         true

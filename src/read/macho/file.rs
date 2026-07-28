@@ -5,14 +5,15 @@ use core::{mem, str};
 use crate::endian::{self, BigEndian, Endian, Endianness, NativeEndian};
 use crate::pod::Pod;
 use crate::read::{
-    self, Architecture, ByteString, ComdatKind, Error, Export, FileFlags, Import,
-    NoDynamicRelocationIterator, Object, ObjectComdat, ObjectKind, ObjectMap, ObjectSection,
-    ReadError, ReadRef, Result, SectionIndex, SubArchitecture, SymbolIndex,
+    self, Architecture, ComdatKind, Error, FileFlags, NoDynamicRelocationIterator, Object,
+    ObjectComdat, ObjectKind, ObjectMap, ObjectSection, ReadError, ReadRef, Result, SectionIndex,
+    SubArchitecture, SymbolIndex,
 };
 use crate::{SkipDebugList, macho};
 
 use super::{
-    DyldCacheImage, LoadCommandIterator, MachOSection, MachOSectionInternal, MachOSectionIterator,
+    DyldCacheImage, LoadCommandIterator, MachOExportIterator, MachOImportIterator,
+    MachOImportLibraryIterator, MachOSection, MachOSectionInternal, MachOSectionIterator,
     MachOSegment, MachOSegmentInternal, MachOSegmentIterator, MachOSymbol, MachOSymbolIterator,
     MachOSymbolTable, Nlist, Section, Segment, SymbolTable,
 };
@@ -50,6 +51,7 @@ where
 {
     pub(super) endian: Mach::Endian,
     pub(super) data: SkipDebugList<R>,
+    pub(super) linkedit_data: Option<SkipDebugList<R>>,
     pub(super) header_offset: u64,
     pub(super) header: &'data Mach,
     pub(super) segments: Vec<MachOSegmentInternal<'data, Mach, R>>,
@@ -75,7 +77,14 @@ where
             while let Ok(Some(command)) = commands.next() {
                 if let Some((segment, section_data)) = Mach::Segment::from_command(command)? {
                     segments.push(MachOSegmentInternal { segment, data });
-                    Self::parse_sections(endian, data, segment, section_data, &mut sections)?;
+                    Self::parse_sections(
+                        endian,
+                        data,
+                        header,
+                        segment,
+                        section_data,
+                        &mut sections,
+                    )?;
                 } else if let Some(symtab) = command.symtab()? {
                     symbols = symtab.symbols(endian, data)?;
                 }
@@ -85,6 +94,7 @@ where
         Ok(MachOFile {
             endian,
             data: SkipDebugList(data),
+            linkedit_data: Some(SkipDebugList(data)),
             header_offset: 0,
             header,
             segments,
@@ -125,7 +135,14 @@ where
                         linkedit_data = Some(data);
                     }
                     segments.push(MachOSegmentInternal { segment, data });
-                    Self::parse_sections(endian, data, segment, section_data, &mut sections)?;
+                    Self::parse_sections(
+                        endian,
+                        data,
+                        header,
+                        segment,
+                        section_data,
+                        &mut sections,
+                    )?;
                 } else if let Some(st) = command.symtab()? {
                     symtab = Some(st);
                 }
@@ -142,6 +159,7 @@ where
         Ok(MachOFile {
             endian,
             data: SkipDebugList(data),
+            linkedit_data: linkedit_data.map(SkipDebugList),
             header_offset,
             header,
             segments,
@@ -153,6 +171,7 @@ where
     fn parse_sections(
         endian: Mach::Endian,
         data: R,
+        header: &Mach,
         segment: &Mach::Segment,
         section_data: &'data [u8],
         sections: &mut Vec<MachOSectionInternal<'data, Mach, R>>,
@@ -161,6 +180,16 @@ where
         let segment_end = segment_fileoff.wrapping_add(segment.filesize(endian).into());
         let overflow_possible = segment_end > u32::MAX as u64;
         let mut prev_offset = segment_fileoff;
+
+        let readonly = if header.filetype(endian) == macho::MH_OBJECT {
+            // Let the section parser determine it from segment name.
+            None
+        } else {
+            Some(
+                !segment.initprot(endian).contains(macho::VM_PROT_WRITE)
+                    || segment.flags(endian).contains(macho::SG_READ_ONLY),
+            )
+        };
 
         for section in segment.sections(endian, section_data)? {
             let mut offset = u64::from(section.offset(endian));
@@ -184,7 +213,9 @@ where
             }
 
             let index = SectionIndex(sections.len() + 1);
-            sections.push(MachOSectionInternal::parse(index, section, data, offset));
+            sections.push(MachOSectionInternal::parse(
+                endian, index, readonly, section, data, offset,
+            ));
         }
         Ok(())
     }
@@ -234,6 +265,20 @@ where
     /// Returns an empty symbol table if the file has no symbol table.
     pub fn macho_symbol_table(&self) -> &SymbolTable<'data, Mach, R> {
         &self.symbols
+    }
+
+    /// Get the names of the libraries in the dylib load commands.
+    ///
+    /// Library ordinals are 1-based so the first entry is an empty `&[]`.
+    pub(super) fn libraries(&self) -> Result<Vec<&'data [u8]>> {
+        let mut libraries = vec![&[][..]];
+        let mut commands = self.macho_load_commands()?;
+        while let Some(command) = commands.next()? {
+            if let Some(dylib) = command.dylib()? {
+                libraries.push(command.string(self.endian, dylib.dylib.name)?);
+            }
+        }
+        Ok(libraries)
     }
 
     /// Return the `LC_BUILD_VERSION` load command if present.
@@ -316,6 +361,21 @@ where
         'data: 'file;
     type DynamicRelocationIterator<'file>
         = NoDynamicRelocationIterator
+    where
+        Self: 'file,
+        'data: 'file;
+    type ImportLibraryIterator<'file>
+        = MachOImportLibraryIterator<'data, 'file, Mach, R>
+    where
+        Self: 'file,
+        'data: 'file;
+    type ImportIterator<'file>
+        = MachOImportIterator<'data, 'file, Mach, R>
+    where
+        Self: 'file,
+        'data: 'file;
+    type ExportIterator<'file>
+        = MachOExportIterator<'data, 'file, Mach, R>
     where
         Self: 'file,
         'data: 'file;
@@ -447,84 +507,16 @@ where
         self.symbols.object_map(self.endian)
     }
 
-    fn imports(&self) -> Result<Vec<Import<'data>>> {
-        let mut dysymtab = None;
-        let mut libraries = Vec::new();
-        let twolevel = self.header.flags(self.endian).contains(macho::MH_TWOLEVEL);
-        if twolevel {
-            libraries.push(&[][..]);
-        }
-        let mut commands =
-            self.header
-                .load_commands(self.endian, self.data.0, self.header_offset)?;
-        while let Some(command) = commands.next()? {
-            if let Some(command) = command.dysymtab()? {
-                dysymtab = Some(command);
-            }
-            if twolevel {
-                if let Some(dylib) = command.dylib()? {
-                    libraries.push(command.string(self.endian, dylib.dylib.name)?);
-                }
-            }
-        }
-
-        let mut imports = Vec::new();
-        if let Some(dysymtab) = dysymtab {
-            let index = dysymtab.iundefsym.get(self.endian) as usize;
-            let number = dysymtab.nundefsym.get(self.endian) as usize;
-            for i in index..(index.wrapping_add(number)) {
-                let symbol = self.symbols.symbol(SymbolIndex(i))?;
-                let name = symbol.name(self.endian, self.symbols.strings())?;
-                let library = if twolevel {
-                    if let Some(index) = symbol.library_ordinal(self.endian).index() {
-                        libraries
-                            .get(index as usize)
-                            .copied()
-                            .read_error("Invalid Mach-O symbol library ordinal")?
-                    } else {
-                        // Don't currently distinguish between self/executable/flat.
-                        &[]
-                    }
-                } else {
-                    // Flat namespace.
-                    &[]
-                };
-                imports.push(Import {
-                    name: ByteString(name),
-                    library: ByteString(library),
-                });
-            }
-        }
-        Ok(imports)
+    fn import_libraries(&self) -> Result<MachOImportLibraryIterator<'data, '_, Mach, R>> {
+        MachOImportLibraryIterator::new(self)
     }
 
-    fn exports(&self) -> Result<Vec<Export<'data>>> {
-        let mut dysymtab = None;
-        let mut commands =
-            self.header
-                .load_commands(self.endian, self.data.0, self.header_offset)?;
-        while let Some(command) = commands.next()? {
-            if let Some(command) = command.dysymtab()? {
-                dysymtab = Some(command);
-                break;
-            }
-        }
+    fn imports(&self) -> Result<MachOImportIterator<'data, '_, Mach, R>> {
+        MachOImportIterator::new(self)
+    }
 
-        let mut exports = Vec::new();
-        if let Some(dysymtab) = dysymtab {
-            let index = dysymtab.iextdefsym.get(self.endian) as usize;
-            let number = dysymtab.nextdefsym.get(self.endian) as usize;
-            for i in index..(index.wrapping_add(number)) {
-                let symbol = self.symbols.symbol(SymbolIndex(i))?;
-                let name = symbol.name(self.endian, self.symbols.strings())?;
-                let address = symbol.n_value(self.endian).into();
-                exports.push(Export {
-                    name: ByteString(name),
-                    address,
-                });
-            }
-        }
-        Ok(exports)
+    fn exports(&self) -> Result<MachOExportIterator<'data, '_, Mach, R>> {
+        MachOExportIterator::new(self)
     }
 
     #[inline]
@@ -725,7 +717,7 @@ where
 
 /// A trait for generic access to [`macho::MachHeader32`] and [`macho::MachHeader64`].
 #[allow(missing_docs)]
-pub trait MachHeader: Debug + Pod {
+pub trait MachHeader: Debug + Pod + read::private::Sealed {
     type Word: Into<u64>;
     type Endian: endian::Endian;
     type Segment: Segment<Endian = Self::Endian, Section = Self::Section>;
@@ -788,13 +780,16 @@ pub trait MachHeader: Debug + Pod {
         data: R,
         header_offset: u64,
     ) -> Result<LoadCommandIterator<'data, Self::Endian>> {
+        let header_size = mem::size_of::<Self>() as u64;
         let data = data
-            .read_bytes_at(
-                header_offset + mem::size_of::<Self>() as u64,
-                self.sizeofcmds(endian).into(),
-            )
+            .read_bytes_at(header_offset + header_size, self.sizeofcmds(endian).into())
             .read_error("Invalid Mach-O load command table size")?;
-        Ok(LoadCommandIterator::new(endian, data, self.ncmds(endian)))
+        Ok(LoadCommandIterator::new(
+            endian,
+            data,
+            self.ncmds(endian),
+            header_size,
+        ))
     }
 
     /// Return the UUID from the `LC_UUID` load command, if one is present.
@@ -813,6 +808,8 @@ pub trait MachHeader: Debug + Pod {
         Ok(None)
     }
 }
+
+impl<Endian: endian::Endian> read::private::Sealed for macho::MachHeader32<Endian> {}
 
 impl<Endian: endian::Endian> MachHeader for macho::MachHeader32<Endian> {
     type Word = u32;
@@ -861,6 +858,8 @@ impl<Endian: endian::Endian> MachHeader for macho::MachHeader32<Endian> {
         self.flags.get(endian)
     }
 }
+
+impl<Endian: endian::Endian> read::private::Sealed for macho::MachHeader64<Endian> {}
 
 impl<Endian: endian::Endian> MachHeader for macho::MachHeader64<Endian> {
     type Word = u64;

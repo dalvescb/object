@@ -1,13 +1,12 @@
 use core::fmt::Debug;
 use core::mem;
 
-use alloc::vec::Vec;
-
 use crate::endian::BigEndian as BE;
 use crate::pod::Pod;
 use crate::read::{
-    self, Architecture, Error, Export, FileFlags, Import, NoDynamicRelocationIterator, Object,
-    ObjectKind, ObjectSection, ReadError, ReadRef, Result, SectionIndex, SymbolIndex,
+    self, Architecture, Error, FileFlags, NoDynamicRelocationIterator, NoExportIterator,
+    NoImportIterator, NoImportLibraryIterator, Object, ObjectKind, ObjectSection, ReadError,
+    ReadRef, Result, SectionIndex, SymbolIndex,
 };
 use crate::{SkipDebugList, xcoff};
 
@@ -169,6 +168,21 @@ where
     where
         Self: 'file,
         'data: 'file;
+    type ImportLibraryIterator<'file>
+        = NoImportLibraryIterator<'data, 'file, R>
+    where
+        Self: 'file,
+        'data: 'file;
+    type ImportIterator<'file>
+        = NoImportIterator<'data, 'file, R>
+    where
+        Self: 'file,
+        'data: 'file;
+    type ExportIterator<'file>
+        = NoExportIterator<'data, 'file, R>
+    where
+        Self: 'file,
+        'data: 'file;
 
     fn architecture(&self) -> Architecture {
         if self.is_64() {
@@ -277,14 +291,19 @@ where
         None
     }
 
-    fn imports(&self) -> Result<alloc::vec::Vec<Import<'data>>> {
-        // TODO: return the imports in the STYP_LOADER section.
-        Ok(Vec::new())
+    fn import_libraries(&self) -> Result<Self::ImportLibraryIterator<'_>> {
+        // TODO: return the import file IDs in the STYP_LOADER section.
+        Ok(Default::default())
     }
 
-    fn exports(&self) -> Result<alloc::vec::Vec<Export<'data>>> {
+    fn imports(&self) -> Result<Self::ImportIterator<'_>> {
+        // TODO: return the imports in the STYP_LOADER section.
+        Ok(Default::default())
+    }
+
+    fn exports(&self) -> Result<Self::ExportIterator<'_>> {
         // TODO: return the exports in the STYP_LOADER section.
-        Ok(Vec::new())
+        Ok(Default::default())
     }
 
     fn has_debug_symbols(&self) -> bool {
@@ -312,7 +331,7 @@ where
 
 /// A trait for generic access to [`xcoff::FileHeader32`] and [`xcoff::FileHeader64`].
 #[allow(missing_docs)]
-pub trait FileHeader: Debug + Pod {
+pub trait FileHeader: Debug + Pod + read::private::Sealed {
     type Word: Into<u64>;
     type AuxHeader: AuxHeader<Word = Self::Word>;
     type SectionHeader: SectionHeader<Word = Self::Word, Rel = Self::Rel>;
@@ -395,6 +414,8 @@ pub trait FileHeader: Debug + Pod {
     }
 }
 
+impl read::private::Sealed for xcoff::FileHeader32 {}
+
 impl FileHeader for xcoff::FileHeader32 {
     type Word = u32;
     type AuxHeader = xcoff::AuxHeader32;
@@ -436,6 +457,8 @@ impl FileHeader for xcoff::FileHeader32 {
         self.f_flags.get(BE)
     }
 }
+
+impl read::private::Sealed for xcoff::FileHeader64 {}
 
 impl FileHeader for xcoff::FileHeader64 {
     type Word = u64;
@@ -481,7 +504,7 @@ impl FileHeader for xcoff::FileHeader64 {
 
 /// A trait for generic access to [`xcoff::AuxHeader32`] and [`xcoff::AuxHeader64`].
 #[allow(missing_docs)]
-pub trait AuxHeader: Debug + Pod {
+pub trait AuxHeader: Debug + Pod + read::private::Sealed {
     type Word: Into<u64>;
 
     fn o_mflag(&self) -> u16;
@@ -515,6 +538,8 @@ pub trait AuxHeader: Debug + Pod {
     fn o_sntbss(&self) -> u16;
     fn o_x64flags(&self) -> Option<u16>;
 }
+
+impl read::private::Sealed for xcoff::AuxHeader32 {}
 
 impl AuxHeader for xcoff::AuxHeader32 {
     type Word = u32;
@@ -639,6 +664,8 @@ impl AuxHeader for xcoff::AuxHeader32 {
         None
     }
 }
+
+impl read::private::Sealed for xcoff::AuxHeader64 {}
 
 impl AuxHeader for xcoff::AuxHeader64 {
     type Word = u64;

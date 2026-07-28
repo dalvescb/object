@@ -121,12 +121,6 @@ impl<'a> Object<'a> {
                 SectionKind::TlsVariables,
                 SectionFlags::None,
             ),
-            StandardSection::Common => (
-                &b"__DATA"[..],
-                &b"__common"[..],
-                SectionKind::Common,
-                SectionFlags::None,
-            ),
             StandardSection::GnuProperty => {
                 // Unsupported section.
                 (&[], &[], SectionKind::Note, SectionFlags::None)
@@ -140,6 +134,7 @@ impl<'a> Object<'a> {
                         | macho::S_ATTR_LIVE_SUPPORT
                         | macho::S_ATTR_NO_TOC
                         | macho::S_ATTR_STRIP_STATIC_SYMS,
+                    reserved2: 0,
                 },
             ),
         }
@@ -154,7 +149,7 @@ impl<'a> Object<'a> {
                 macho::S_REGULAR.into()
             }
             SectionKind::ReadOnlyString => macho::S_CSTRING_LITERALS.into(),
-            SectionKind::UninitializedData | SectionKind::Common => macho::S_ZEROFILL.into(),
+            SectionKind::UninitializedData => macho::S_ZEROFILL.into(),
             SectionKind::Tls => macho::S_THREAD_LOCAL_REGULAR.into(),
             SectionKind::UninitializedTls => macho::S_THREAD_LOCAL_ZEROFILL.into(),
             SectionKind::TlsVariables => macho::S_THREAD_LOCAL_VARIABLES.into(),
@@ -167,16 +162,19 @@ impl<'a> Object<'a> {
                 return SectionFlags::None;
             }
         };
-        SectionFlags::MachO { flags }
+        SectionFlags::MachO {
+            flags,
+            reserved2: 0,
+        }
     }
 
     pub(crate) fn macho_symbol_flags(&self, symbol: &Symbol) -> SymbolFlags<SectionId, SymbolId> {
         // TODO: N_STAB
         let n_type = match symbol.section {
-            SymbolSection::Undefined => macho::N_UNDF | macho::N_EXT,
+            SymbolSection::Undefined | SymbolSection::Common => macho::N_UNDF | macho::N_EXT,
             SymbolSection::Absolute => macho::N_ABS.into(),
             SymbolSection::Section(_) => macho::N_SECT.into(),
-            SymbolSection::None | SymbolSection::Common => {
+            SymbolSection::None => {
                 return SymbolFlags::None;
             }
         } | match symbol.scope {
@@ -184,7 +182,7 @@ impl<'a> Object<'a> {
             SymbolScope::Linkage => macho::N_EXT | macho::N_PEXT,
             SymbolScope::Dynamic => macho::N_EXT,
         };
-        let n_desc = if symbol.weak {
+        let mut n_desc = if symbol.weak {
             if symbol.is_undefined() {
                 macho::N_WEAK_REF
             } else {
@@ -193,6 +191,14 @@ impl<'a> Object<'a> {
         } else {
             macho::SymbolDesc(0)
         };
+        if symbol.is_common() {
+            let align = if symbol.value > 1 {
+                symbol.value.trailing_zeros().min(15) as u8
+            } else {
+                0
+            };
+            n_desc = n_desc.with_common_alignment(align);
+        }
         SymbolFlags::MachO { n_type, n_desc }
     }
 
@@ -357,6 +363,7 @@ impl<'a> Object<'a> {
                 (K::PltRelative, E::Generic | E::AArch64Call) => {
                     (true, macho::ARM64_RELOC_BRANCH26)
                 }
+                (K::GotRelative, E::Generic) => (true, macho::ARM64_RELOC_POINTER_TO_GOT),
                 _ => return unsupported_reloc(),
             },
             Architecture::PowerPc | Architecture::PowerPc64 => match kind {
@@ -542,7 +549,7 @@ impl<'a> Object<'a> {
             if !symbol.name.is_empty() {
                 symbol_offsets[index].str_id = Some(strtab.add(&symbol.name));
             }
-            if symbol.is_undefined() {
+            if symbol.is_undefined() || symbol.is_common() {
                 undefined_symbols.push(index);
             } else if symbol.is_local() {
                 local_symbols.push(index);
@@ -599,6 +606,7 @@ impl<'a> Object<'a> {
         buffer
             .reserve(reserved_len)
             .map_err(|_| Error(String::from("Cannot allocate buffer")))?;
+        let buffer = &mut CountingBuffer::new(buffer);
 
         // Write file header.
         let (cputype, cpusubtype_id) = match (self.architecture, self.sub_architecture) {
@@ -649,7 +657,7 @@ impl<'a> Object<'a> {
         encoder.mach_header(buffer, mach_header);
 
         // Write segment command.
-        debug_assert_eq!(segment_command_offset, buffer.len());
+        debug_assert_eq!(segment_command_offset, buffer.count());
         let segment_command = &SegmentCommand {
             segname: [0; 16],
             vmaddr: 0,
@@ -685,7 +693,7 @@ impl<'a> Object<'a> {
                     ))
                 })?
                 .copy_from_slice(&section.segment);
-            let SectionFlags::MachO { flags } = self.section_flags(section) else {
+            let SectionFlags::MachO { flags, reserved2 } = self.section_flags(section) else {
                 return Err(Error(format!(
                     "unimplemented section `{}` kind {:?}",
                     section.name().unwrap_or(""),
@@ -703,7 +711,7 @@ impl<'a> Object<'a> {
                 nreloc: section_offsets[index].reloc_count as u32,
                 flags,
                 reserved1: 0,
-                reserved2: 0,
+                reserved2,
                 reserved3: 0,
             };
             encoder.section_header(buffer, section_header);
@@ -711,7 +719,7 @@ impl<'a> Object<'a> {
 
         // Write build version.
         if let Some(version) = &self.macho_build_version {
-            debug_assert_eq!(build_version_offset, buffer.len());
+            debug_assert_eq!(build_version_offset, buffer.count());
             let build_version_command = &BuildVersionCommand {
                 platform: version.platform,
                 minos: version.minos,
@@ -722,7 +730,7 @@ impl<'a> Object<'a> {
         }
 
         // Write symtab command.
-        debug_assert_eq!(symtab_command_offset, buffer.len());
+        debug_assert_eq!(symtab_command_offset, buffer.count());
         let symtab_command = &SymtabCommand {
             symoff: symtab_offset as u32,
             nsyms,
@@ -732,7 +740,7 @@ impl<'a> Object<'a> {
         encoder.symtab_command(buffer, symtab_command);
 
         // Write dysymtab command.
-        debug_assert_eq!(dysymtab_command_offset, buffer.len());
+        debug_assert_eq!(dysymtab_command_offset, buffer.count());
         let dysymtab_command = &DysymtabCommand {
             ilocalsym: 0,
             nlocalsym: local_symbols.len() as u32,
@@ -745,14 +753,14 @@ impl<'a> Object<'a> {
         encoder.dysymtab_command(buffer, dysymtab_command);
 
         // Write section data.
-        debug_assert_eq!(segment_file_offset, buffer.len());
+        debug_assert_eq!(segment_file_offset, buffer.count());
         for (index, section) in self.sections.iter().enumerate() {
             if !section.is_bss() {
                 buffer.resize(section_offsets[index].offset);
                 buffer.write_bytes(&section.data);
             }
         }
-        debug_assert_eq!(segment_file_offset + segment_file_size, buffer.len());
+        debug_assert_eq!(segment_file_offset + segment_file_size, buffer.count());
 
         // Write relocations.
         for (index, section) in self.sections.iter().enumerate() {
@@ -883,9 +891,12 @@ impl<'a> Object<'a> {
                 _ => 0,
             };
 
-            let n_value = match symbol.section.id() {
-                Some(section) => section_offsets[section.0].address + symbol.value,
-                None => symbol.value,
+            let n_value = match symbol.section {
+                SymbolSection::Common => symbol.size,
+                SymbolSection::Section(section) => {
+                    section_offsets[section.0].address + symbol.value
+                }
+                _ => symbol.value,
             };
 
             let n_strx = symbol_offsets[index]
@@ -904,10 +915,10 @@ impl<'a> Object<'a> {
         }
 
         // Write strtab.
-        debug_assert_eq!(strtab_offset, buffer.len());
+        debug_assert_eq!(strtab_offset, buffer.count());
         buffer.write_bytes(&strtab_data);
 
-        debug_assert_eq!(reserved_len, buffer.len());
+        debug_assert_eq!(reserved_len, buffer.count());
 
         Ok(())
     }

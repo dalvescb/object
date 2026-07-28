@@ -46,18 +46,18 @@ impl<'a> Object<'a> {
             n_descsz: U32::new(self.endian, align_u32(3 * 4, address_size)),
             n_type: U32::new(self.endian, elf::NT_GNU_PROPERTY_TYPE_0),
         };
-        write_pod(&mut data, header);
+        data.write_pod(header);
         data.extend_from_slice(n_name);
         // This happens to already be aligned correctly.
         debug_assert_eq!(
             align(data.len() as u64, address_size.into()),
             data.len() as u64
         );
-        write_pod(&mut data, &U32::new(self.endian, property));
+        data.write_u32(self.endian, property);
         // Value size
-        write_pod(&mut data, &U32::new(self.endian, 4u32));
-        write_pod(&mut data, &U32::new(self.endian, value));
-        write_align(&mut data, address_size.into());
+        data.write_u32(self.endian, 4u32);
+        data.write_u32(self.endian, value);
+        data.resize(align(data.len() as u64, address_size.into()) as usize, 0);
 
         let section = self.section_id(StandardSection::GnuProperty);
         self.append_section_data(section, &data, address_size.into());
@@ -102,10 +102,6 @@ impl<'a> Object<'a> {
                 // Unsupported section.
                 (&[], &[], SectionKind::TlsVariables, SectionFlags::None)
             }
-            StandardSection::Common => {
-                // Unsupported section.
-                (&[], &[], SectionKind::Common, SectionFlags::None)
-            }
             StandardSection::GnuProperty => (
                 &[],
                 &b".note.gnu.property"[..],
@@ -145,7 +141,7 @@ impl<'a> Object<'a> {
 
     pub(crate) fn elf_section_flags(&self, section: &Section<'_>) -> SectionFlags {
         let sh_type = match section.kind {
-            SectionKind::Unknown | SectionKind::Common | SectionKind::TlsVariables => {
+            SectionKind::Unknown | SectionKind::TlsVariables => {
                 // Unsupported sections.
                 return SectionFlags::None;
             }
@@ -236,6 +232,7 @@ impl<'a> Object<'a> {
             Architecture::X86_64_X32 => true,
             Architecture::Hppa => false,
             Architecture::Hexagon => true,
+            Architecture::Ia64 => true,
             Architecture::LoongArch32 => true,
             Architecture::LoongArch64 => true,
             Architecture::M68k => true,
@@ -268,6 +265,7 @@ impl<'a> Object<'a> {
         &mut self,
         reloc: &mut RelocationInternal,
     ) -> Result<()> {
+        use Endianness as N;
         use RelocationEncoding as E;
         use RelocationKind as K;
 
@@ -333,6 +331,18 @@ impl<'a> Object<'a> {
                 (K::None, _, 0) => elf::R_CKCORE_NONE,
                 (K::Absolute, _, 32) => elf::R_CKCORE_ADDR32,
                 (K::Relative, E::Generic, 32) => elf::R_CKCORE_PCREL32,
+                _ => return unsupported_reloc(),
+            },
+            Architecture::Ia64 => match (kind, encoding, size, self.endian) {
+                (K::None, E::Generic, 0, _) => elf::R_IA64_NONE,
+                (K::Absolute, E::Generic, 32, N::Little) => elf::R_IA64_DIR32LSB,
+                (K::Absolute, E::Generic, 32, N::Big) => elf::R_IA64_DIR32MSB,
+                (K::Absolute, E::Generic, 64, N::Little) => elf::R_IA64_DIR64LSB,
+                (K::Absolute, E::Generic, 64, N::Big) => elf::R_IA64_DIR64MSB,
+                (K::Relative, E::Generic, 32, N::Little) => elf::R_IA64_PCREL32LSB,
+                (K::Relative, E::Generic, 32, N::Big) => elf::R_IA64_PCREL32MSB,
+                (K::Relative, E::Generic, 64, N::Little) => elf::R_IA64_PCREL64LSB,
+                (K::Relative, E::Generic, 64, N::Big) => elf::R_IA64_PCREL64MSB,
                 _ => return unsupported_reloc(),
             },
             Architecture::I386 => match (kind, size) {
@@ -723,6 +733,7 @@ impl<'a> Object<'a> {
             (Architecture::X86_64_X32, None) => elf::EM_X86_64,
             (Architecture::Hppa, None) => elf::EM_PARISC,
             (Architecture::Hexagon, None) => elf::EM_HEXAGON,
+            (Architecture::Ia64, None) => elf::EM_IA_64,
             (Architecture::LoongArch32, None) => elf::EM_LOONGARCH,
             (Architecture::LoongArch64, None) => elf::EM_LOONGARCH,
             (Architecture::M68k, None) => elf::EM_68K,
@@ -762,6 +773,10 @@ impl<'a> Object<'a> {
 
         if self.architecture == Architecture::Mips64_N32 {
             e_flags |= elf::EF_MIPS_ABI2;
+        }
+
+        if self.architecture == Architecture::Ia64 {
+            e_flags |= elf::EF_IA_64_ABI64;
         }
 
         writer.write_file_header(&FileHeader {

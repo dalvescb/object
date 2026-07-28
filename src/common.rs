@@ -23,6 +23,7 @@ pub enum Architecture {
     X86_64_X32,
     Hexagon,
     Hppa,
+    Ia64,
     LoongArch32,
     LoongArch64,
     M68k,
@@ -77,6 +78,7 @@ impl Architecture {
             Architecture::X86_64_X32 => Some(AddressSize::U32),
             Architecture::Hexagon => Some(AddressSize::U32),
             Architecture::Hppa => Some(AddressSize::U32),
+            Architecture::Ia64 => Some(AddressSize::U64),
             Architecture::LoongArch32 => Some(AddressSize::U32),
             Architecture::LoongArch64 => Some(AddressSize::U64),
             Architecture::M68k => Some(AddressSize::U32),
@@ -174,7 +176,7 @@ pub enum SectionKind {
     ///
     /// Example ELF sections: `.rodata`
     ///
-    /// Example Mach-O sections: `__TEXT/__const`, `__DATA/__const`, `__TEXT/__literal4`
+    /// Example Mach-O sections: `__TEXT/__const`, `__TEXT/__literal4`
     ReadOnlyData,
     /// A read only data section with relocations.
     ///
@@ -191,12 +193,8 @@ pub enum SectionKind {
     ///
     /// Example ELF sections: `.bss`
     ///
-    /// Example Mach-O sections: `__DATA/__bss`
+    /// Example Mach-O sections: `__DATA/__bss`, `__DATA/__common`
     UninitializedData,
-    /// An uninitialized common data section.
-    ///
-    /// Example Mach-O sections: `__DATA/__common`
-    Common,
     /// A TLS data section.
     ///
     /// Example ELF sections: `.tdata`
@@ -247,9 +245,7 @@ pub enum SectionKind {
 impl SectionKind {
     /// Return true if this section contains zerofill data.
     pub fn is_bss(self) -> bool {
-        self == SectionKind::UninitializedData
-            || self == SectionKind::UninitializedTls
-            || self == SectionKind::Common
+        self == SectionKind::UninitializedData || self == SectionKind::UninitializedTls
     }
 }
 
@@ -625,6 +621,10 @@ pub enum SectionFlags {
     MachO {
         /// `flags` field in the section header.
         flags: crate::macho::SectionFlags,
+        /// `reserved2` field in the section header.
+        ///
+        /// This is the size of a stub in a section with type `S_SYMBOL_STUBS`.
+        reserved2: u32,
     },
     /// COFF section flags.
     #[cfg(feature = "coff")]
@@ -738,13 +738,13 @@ pub enum RelocationFlags {
     #[cfg(feature = "elf")]
     Elf {
         /// `r_type` field in the ELF relocation.
-        r_type: u32,
+        r_type: crate::elf::RelocationType,
     },
     /// Mach-O relocation fields.
     #[cfg(feature = "macho")]
     MachO {
         /// `r_type` field in the Mach-O relocation.
-        r_type: u8,
+        r_type: crate::macho::RelocationType,
         /// `r_pcrel` field in the Mach-O relocation.
         r_pcrel: bool,
         /// `r_length` field in the Mach-O relocation.
@@ -754,13 +754,13 @@ pub enum RelocationFlags {
     #[cfg(feature = "coff")]
     Coff {
         /// `typ` field in the COFF relocation.
-        typ: u16,
+        typ: crate::pe::RelocationType,
     },
     /// XCOFF relocation fields.
     #[cfg(feature = "xcoff")]
     Xcoff {
         /// `r_rtype` field in the XCOFF relocation.
-        r_rtype: u8,
+        r_rtype: crate::xcoff::RelocationType,
         /// `r_rsize` field in the XCOFF relocation.
         r_rsize: u8,
     },

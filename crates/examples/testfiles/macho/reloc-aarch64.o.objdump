@@ -5,8 +5,8 @@ Flags: MachO { flags: MH_SUBSECTIONS_VIA_SYMBOLS }
 Relative Address Base: 0
 Entry Address: 0
 Segment { name: "", address: 0, size: 48, permissions: RWX }
-1: Section { segment: "__TEXT", name: "__text", address: 0, size: 28, align: 1, kind: Text, flags: MachO { flags: S_REGULAR | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS } }
-2: Section { segment: "__DATA", name: "__data", address: 28, size: 20, align: 1, kind: Data, flags: MachO { flags: S_REGULAR } }
+1: Section { segment: "__TEXT", name: "__text", address: 0, size: 28, align: 1, kind: Text, flags: MachO { flags: S_REGULAR | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS, reserved2: 0 } }
+2: Section { segment: "__DATA", name: "__data", address: 28, size: 20, align: 1, kind: Data, flags: MachO { flags: S_REGULAR, reserved2: 0 } }
 
 Symbols
 0: Symbol { name: "ltmp0", address: 0, size: 0, kind: Section, section: Section(SectionIndex(1)), scope: Compilation, weak: false, flags: MachO { n_type: N_SECT, n_desc: 0 } }
@@ -28,7 +28,7 @@ __text relocations
 (0, Relocation { kind: PltRelative, encoding: AArch64Call, size: 1a, target: Symbol(SymbolIndex(3)), addend: 0, implicit_addend: true, flags: MachO { r_type: 2, r_pcrel: true, r_length: 2 } })
 
 __data relocations
-(1c, Relocation { kind: Unknown, encoding: Unknown, size: 20, target: Symbol(SymbolIndex(3)), addend: 0, implicit_addend: true, flags: MachO { r_type: 7, r_pcrel: true, r_length: 2 } })
+(1c, Relocation { kind: GotRelative, encoding: Generic, size: 20, target: Symbol(SymbolIndex(3)), addend: 0, implicit_addend: true, flags: MachO { r_type: 7, r_pcrel: true, r_length: 2 } })
 (14, Relocation { kind: Unknown, encoding: Unknown, size: 40, target: Symbol(SymbolIndex(3)), addend: 0, implicit_addend: true, flags: MachO { r_type: 7, r_pcrel: false, r_length: 3 } })
 (10, Relocation { kind: Absolute, encoding: Generic, size: 20, target: Symbol(SymbolIndex(3)), subtractor: SymbolIndex(4), addend: 0, implicit_addend: true, flags: MachO { r_type: 0, r_pcrel: false, r_length: 2 } })
 (8, Relocation { kind: Absolute, encoding: Generic, size: 40, target: Symbol(SymbolIndex(3)), subtractor: SymbolIndex(4), addend: 0, implicit_addend: true, flags: MachO { r_type: 0, r_pcrel: false, r_length: 3 } })
@@ -36,8 +36,8 @@ __data relocations
 
 Dynamic symbols
 
-Import { library: "", name: "_g0" }
-Import { library: "", name: "_g1" }
+Import { library: "", name: "_g0", flags: MachO { n_type: N_UNDF | N_EXT, n_desc: 0 } }
+Import { library: "", name: "_g1", flags: MachO { n_type: N_UNDF | N_EXT, n_desc: 0 } }
 
 Symbol map
 0x28-0x48 "_data"

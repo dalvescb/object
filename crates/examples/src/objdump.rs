@@ -227,27 +227,18 @@ fn dump_parsed_object<W: Write, E: Write>(w: &mut W, e: &mut E, file: &object::F
         }
     }
 
+    match file.import_libraries() {
+        Ok(iter) => dump_iter(w, e, iter, "import library")?,
+        Err(err) => writeln!(e, "Failed to parse import libraries: {}", err)?,
+    }
+
     match file.imports() {
-        Ok(imports) => {
-            if !imports.is_empty() {
-                writeln!(w)?;
-                for import in imports {
-                    writeln!(w, "{:x?}", import)?;
-                }
-            }
-        }
+        Ok(iter) => dump_iter(w, e, iter, "import")?,
         Err(err) => writeln!(e, "Failed to parse imports: {}", err)?,
     }
 
     match file.exports() {
-        Ok(exports) => {
-            if !exports.is_empty() {
-                writeln!(w)?;
-                for export in exports {
-                    writeln!(w, "{:x?}", export)?;
-                }
-            }
-        }
+        Ok(iter) => dump_iter(w, e, iter, "export")?,
         Err(err) => writeln!(e, "Failed to parse exports: {}", err)?,
     }
 
@@ -263,6 +254,33 @@ fn dump_parsed_object<W: Write, E: Write>(w: &mut W, e: &mut E, file: &object::F
         )?;
     }
 
+    Ok(())
+}
+
+fn dump_iter<
+    W: Write,
+    E: Write,
+    T: std::fmt::Debug,
+    I: Iterator<Item = object::read::Result<T>>,
+>(
+    w: &mut W,
+    e: &mut E,
+    iter: I,
+    name: &str,
+) -> Result<()> {
+    let mut first = true;
+    for item in iter {
+        match item {
+            Ok(item) => {
+                if first {
+                    writeln!(w)?;
+                    first = false;
+                }
+                writeln!(w, "{:x?}", item)?;
+            }
+            Err(err) => writeln!(e, "Failed to parse {name}: {err}")?,
+        }
+    }
     Ok(())
 }
 

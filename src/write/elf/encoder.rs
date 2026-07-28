@@ -6,8 +6,9 @@ use crate::Wrap;
 use crate::elf;
 use crate::endian::*;
 use crate::pod;
-use crate::write::util::{write_pod, write_pod_slice};
-use crate::write::{self, Error, Result, StringTable, WritableBuffer};
+#[cfg(feature = "read_core")]
+use crate::read;
+use crate::write::{self, Error, Result, StringTable, WritableBuffer, WritableBufferExt};
 
 /// Alignment for .symtab_shndx.
 pub const ALIGN_SYMTAB_SHNDX: u64 = 4;
@@ -32,6 +33,23 @@ pub struct FileHeader {
     pub e_flags: elf::FileFlags,
 }
 
+#[cfg(feature = "read_core")]
+impl FileHeader {
+    /// Convert from a raw file header.
+    ///
+    /// The layout-related fields are not converted. See [`FileHeaderLayout`].
+    pub fn from_raw<Elf: read::elf::FileHeader>(endian: Elf::Endian, header: &Elf) -> Self {
+        FileHeader {
+            os_abi: header.e_ident().os_abi,
+            abi_version: header.e_ident().abi_version,
+            e_type: header.e_type(endian),
+            e_machine: header.e_machine(endian),
+            e_entry: header.e_entry(endian).into(),
+            e_flags: header.e_flags(endian),
+        }
+    }
+}
+
 /// Native endian layout-related fields of [`elf::FileHeader64`].
 #[derive(Debug, Clone, Default)]
 pub struct FileHeaderLayout {
@@ -53,6 +71,32 @@ pub struct FileHeaderLayout {
     pub shstrtab_index: u32,
 }
 
+#[cfg(feature = "read_core")]
+impl FileHeaderLayout {
+    /// Convert from a raw file header.
+    ///
+    /// `data` is the entire file data; it is used to obtain the first section header if required.
+    pub fn from_raw<'data, Elf: read::elf::FileHeader, R: read::ReadRef<'data>>(
+        endian: Elf::Endian,
+        header: &Elf,
+        data: R,
+    ) -> read::Result<Self> {
+        let e_shstrndx = header.e_shstrndx(endian);
+        let shstrtab_index = if e_shstrndx == elf::SHN_UNDEF {
+            0
+        } else {
+            header.shstrndx(endian, data)?
+        };
+        Ok(FileHeaderLayout {
+            e_phoff: header.e_phoff(endian).into(),
+            segment_num: header.phnum(endian, data)?,
+            e_shoff: header.e_shoff(endian).into(),
+            section_num: header.shnum(endian, data)?,
+            shstrtab_index,
+        })
+    }
+}
+
 /// Native endian version of [`elf::ProgramHeader64`].
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
@@ -65,6 +109,23 @@ pub struct ProgramHeader {
     pub p_filesz: u64,
     pub p_memsz: u64,
     pub p_align: u64,
+}
+
+#[cfg(feature = "read_core")]
+impl ProgramHeader {
+    /// Convert from a raw program header.
+    pub fn from_raw<Phdr: read::elf::ProgramHeader>(endian: Phdr::Endian, header: &Phdr) -> Self {
+        ProgramHeader {
+            p_type: header.p_type(endian),
+            p_flags: header.p_flags(endian),
+            p_offset: header.p_offset(endian).into(),
+            p_vaddr: header.p_vaddr(endian).into(),
+            p_paddr: header.p_paddr(endian).into(),
+            p_filesz: header.p_filesz(endian).into(),
+            p_memsz: header.p_memsz(endian).into(),
+            p_align: header.p_align(endian).into(),
+        }
+    }
 }
 
 /// Native endian version of [`elf::SectionHeader64`].
@@ -84,6 +145,25 @@ pub struct SectionHeader {
     pub sh_entsize: u64,
 }
 
+#[cfg(feature = "read_core")]
+impl SectionHeader {
+    /// Convert from a raw section header.
+    pub fn from_raw<Shdr: read::elf::SectionHeader>(endian: Shdr::Endian, header: &Shdr) -> Self {
+        SectionHeader {
+            sh_name: header.sh_name(endian),
+            sh_type: header.sh_type(endian),
+            sh_flags: header.sh_flags(endian),
+            sh_addr: header.sh_addr(endian).into(),
+            sh_offset: header.sh_offset(endian).into(),
+            sh_size: header.sh_size(endian).into(),
+            sh_link: header.sh_link(endian),
+            sh_info: header.sh_info(endian),
+            sh_addralign: header.sh_addralign(endian).into(),
+            sh_entsize: header.sh_entsize(endian).into(),
+        }
+    }
+}
+
 /// Native endian version of [`elf::Sym64`].
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
@@ -101,14 +181,56 @@ pub struct Sym {
     pub st_size: u64,
 }
 
+#[cfg(feature = "read_core")]
+impl Sym {
+    /// Convert from a raw symbol.
+    ///
+    /// `section` can be obtained using [`read::elf::SymbolTable::symbol_section`].
+    pub fn from_raw<S: read::elf::Sym>(endian: S::Endian, sym: &S, section: Option<u32>) -> Self {
+        let st_shndx = sym.st_shndx(endian);
+        Sym {
+            section,
+            st_name: sym.st_name(endian),
+            st_info: sym.st_info(),
+            st_other: sym.st_other(),
+            st_shndx,
+            st_value: sym.st_value(endian).into(),
+            st_size: sym.st_size(endian).into(),
+        }
+    }
+}
+
 /// Unified native endian version of [`elf::Rel64`] and [`elf::Rela64`].
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub struct Rel {
     pub r_offset: u64,
     pub r_sym: u32,
-    pub r_type: u32,
+    pub r_type: elf::RelocationType,
     pub r_addend: i64,
+}
+
+#[cfg(feature = "read_core")]
+impl Rel {
+    /// Convert from a raw relocation without an addend.
+    pub fn from_rel<R: read::elf::Rel>(endian: R::Endian, rel: &R) -> Self {
+        Rel {
+            r_offset: rel.r_offset(endian).into(),
+            r_sym: rel.r_sym(endian),
+            r_type: rel.r_type(endian),
+            r_addend: 0,
+        }
+    }
+
+    /// Convert from a raw relocation with an addend.
+    pub fn from_rela<R: read::elf::Rela>(endian: R::Endian, rela: &R, is_mips64el: bool) -> Self {
+        Rel {
+            r_offset: rela.r_offset(endian).into(),
+            r_sym: rela.r_sym(endian, is_mips64el),
+            r_type: rela.r_type(endian, is_mips64el),
+            r_addend: rela.r_addend(endian).into(),
+        }
+    }
 }
 
 /// Information required for writing [`elf::GnuHashHeader`].
@@ -120,6 +242,27 @@ pub struct GnuHashTable {
     pub bloom_shift: u32,
     pub symbol_base: u32,
     pub symbol_count: u32,
+}
+
+#[cfg(feature = "read_core")]
+impl GnuHashTable {
+    /// Convert from a raw GNU hash header.
+    ///
+    /// `symbol_count` is the number of symbols in the hash. This is used in
+    /// [`Encoder::gnu_hash_table`] and is not stored in the header.
+    pub fn from_raw<E: Endian>(
+        endian: E,
+        header: &elf::GnuHashHeader<E>,
+        symbol_count: u32,
+    ) -> Self {
+        GnuHashTable {
+            bucket_count: header.bucket_count.get(endian),
+            bloom_count: header.bloom_count.get(endian),
+            bloom_shift: header.bloom_shift.get(endian),
+            symbol_base: header.symbol_base.get(endian),
+            symbol_count,
+        }
+    }
 }
 
 /// Information required for writing [`elf::Verdef`].
@@ -139,6 +282,23 @@ pub struct Verdef {
     pub hash: u32,
 }
 
+#[cfg(feature = "read_core")]
+impl Verdef {
+    /// Convert from a raw version definition.
+    ///
+    /// `name` is the `vda_name` field of the first [`elf::Verdaux`] entry.
+    pub fn from_raw<E: Endian>(endian: E, verdef: &elf::Verdef<E>, name: u32) -> Self {
+        Verdef {
+            version: verdef.vd_version.get(endian),
+            flags: verdef.vd_flags.get(endian),
+            index: verdef.vd_ndx.get(endian),
+            aux_count: verdef.vd_cnt.get(endian),
+            name,
+            hash: verdef.vd_hash.get(endian),
+        }
+    }
+}
+
 /// Information required for writing [`elf::Verneed`].
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
@@ -147,6 +307,18 @@ pub struct Verneed {
     pub aux_count: u16,
     /// The string table offset of the file name. Written to `vn_file`.
     pub file: u32,
+}
+
+#[cfg(feature = "read_core")]
+impl Verneed {
+    /// Convert from a raw version dependency.
+    pub fn from_raw<E: Endian>(endian: E, verneed: &elf::Verneed<E>) -> Self {
+        Verneed {
+            version: verneed.vn_version.get(endian),
+            aux_count: verneed.vn_cnt.get(endian),
+            file: verneed.vn_file.get(endian),
+        }
+    }
 }
 
 /// Information required for writing [`elf::Vernaux`].
@@ -159,6 +331,19 @@ pub struct Vernaux {
     pub name: u32,
     /// The hash of the version name, as computed by [`elf::hash`]. Written to `vna_hash`.
     pub hash: u32,
+}
+
+#[cfg(feature = "read_core")]
+impl Vernaux {
+    /// Convert from a raw version dependency auxiliary entry.
+    pub fn from_raw<E: Endian>(endian: E, vernaux: &elf::Vernaux<E>) -> Self {
+        Vernaux {
+            flags: vernaux.vna_flags.get(endian),
+            index: vernaux.vna_other.get(endian),
+            name: vernaux.vna_name.get(endian),
+            hash: vernaux.vna_hash.get(endian),
+        }
+    }
 }
 
 /// A helper for encoding headers and data when writing an ELF file.
@@ -309,7 +494,7 @@ impl<E: Endian> Encoder<E> {
                 e_shnum: U16::new(endian, e_shnum),
                 e_shstrndx: U16::new(endian, e_shstrndx),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         } else {
             let data = &elf::FileHeader32 {
                 e_ident,
@@ -327,7 +512,7 @@ impl<E: Endian> Encoder<E> {
                 e_shnum: U16::new(endian, e_shnum),
                 e_shstrndx: U16::new(endian, e_shstrndx),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         }
 
         Ok(())
@@ -365,7 +550,7 @@ impl<E: Endian> Encoder<E> {
                 p_memsz: U64::new(endian, header.p_memsz),
                 p_align: U64::new(endian, header.p_align),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         } else {
             let data = &elf::ProgramHeader32 {
                 p_type: U32::new(endian, header.p_type),
@@ -377,7 +562,7 @@ impl<E: Endian> Encoder<E> {
                 p_flags: U32::new(endian, header.p_flags),
                 p_align: U32::new(endian, header.p_align as u32),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         }
     }
 
@@ -429,7 +614,7 @@ impl<E: Endian> Encoder<E> {
                 sh_addralign: U64::new(endian, 0),
                 sh_entsize: U64::new(endian, 0),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         } else {
             let data = &elf::SectionHeader32 {
                 sh_name: U32::new(endian, 0),
@@ -443,7 +628,7 @@ impl<E: Endian> Encoder<E> {
                 sh_addralign: U32::new(endian, 0),
                 sh_entsize: U32::new(endian, 0),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         }
     }
 
@@ -472,7 +657,7 @@ impl<E: Endian> Encoder<E> {
                 sh_addralign: U64::new(endian, section.sh_addralign),
                 sh_entsize: U64::new(endian, section.sh_entsize),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         } else {
             let data = &elf::SectionHeader32 {
                 sh_name: U32::new(endian, section.sh_name),
@@ -486,7 +671,7 @@ impl<E: Endian> Encoder<E> {
                 sh_addralign: U32::new(endian, section.sh_addralign as u32),
                 sh_entsize: U32::new(endian, section.sh_entsize as u32),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         }
     }
 
@@ -727,9 +912,9 @@ impl<E: Endian> Encoder<E> {
     /// The buffer should already be aligned to `address_size`.
     pub fn null_symbol<W: WritableBuffer + ?Sized>(self, buffer: &mut W) {
         if self.is_64 {
-            write_pod(buffer, &elf::Sym64::<Endianness>::default());
+            buffer.write_pod(&elf::Sym64::<Endianness>::default());
         } else {
-            write_pod(buffer, &elf::Sym32::<Endianness>::default());
+            buffer.write_pod(&elf::Sym32::<Endianness>::default());
         }
     }
 
@@ -758,7 +943,7 @@ impl<E: Endian> Encoder<E> {
                 st_value: U64::new(endian, sym.st_value),
                 st_size: U64::new(endian, sym.st_size),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         } else {
             let data = &elf::Sym32 {
                 st_name: U32::new(endian, sym.st_name),
@@ -768,7 +953,7 @@ impl<E: Endian> Encoder<E> {
                 st_value: U32::new(endian, sym.st_value as u32),
                 st_size: U32::new(endian, sym.st_size as u32),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         }
 
         if st_shndx == elf::SHN_XINDEX {
@@ -786,7 +971,7 @@ impl<E: Endian> Encoder<E> {
         buffer: &mut W,
         value: T,
     ) {
-        write_pod(buffer, &U32::new(self.endian, value));
+        buffer.write_u32(self.endian, value);
     }
 
     /// Return the size of a relocation entry.
@@ -830,28 +1015,28 @@ impl<E: Endian> Encoder<E> {
                     r_info: elf::Rela64::r_info(endian, self.is_mips64el, rel.r_sym, rel.r_type),
                     r_addend: I64::new(endian, rel.r_addend),
                 };
-                write_pod(buffer, data);
+                buffer.write_pod(data);
             } else {
                 let data = &elf::Rel64 {
                     r_offset: U64::new(endian, rel.r_offset),
                     r_info: elf::Rel64::r_info(endian, rel.r_sym, rel.r_type),
                 };
-                write_pod(buffer, data);
+                buffer.write_pod(data);
             }
         } else {
             if is_rela {
                 let data = &elf::Rela32 {
                     r_offset: U32::new(endian, rel.r_offset as u32),
-                    r_info: elf::Rel32::r_info(endian, rel.r_sym, rel.r_type as u8),
+                    r_info: elf::Rel32::r_info(endian, rel.r_sym, rel.r_type),
                     r_addend: I32::new(endian, rel.r_addend as i32),
                 };
-                write_pod(buffer, data);
+                buffer.write_pod(data);
             } else {
                 let data = &elf::Rel32 {
                     r_offset: U32::new(endian, rel.r_offset as u32),
-                    r_info: elf::Rel32::r_info(endian, rel.r_sym, rel.r_type as u8),
+                    r_info: elf::Rel32::r_info(endian, rel.r_sym, rel.r_type),
                 };
-                write_pod(buffer, data);
+                buffer.write_pod(data);
             }
         }
     }
@@ -882,7 +1067,7 @@ impl<E: Endian> Encoder<E> {
                 d_tag: I64::new(endian, d_tag),
                 d_val: U64::new(endian, d_val),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         } else {
             let d_tag = I32::new_i64(endian, d_tag)
                 .map_err(|_| Error(format!("d_tag overflow: 0x{:x}", d_tag)))?;
@@ -893,7 +1078,7 @@ impl<E: Endian> Encoder<E> {
                 d_tag,
                 d_val: U32::new(endian, d_val),
             };
-            write_pod(buffer, data);
+            buffer.write_pod(data);
         }
         Ok(())
     }
@@ -930,9 +1115,9 @@ impl<E: Endian> Encoder<E> {
             bucket_count: U32::new(self.endian, bucket_count),
             chain_count: U32::new(self.endian, chain_count),
         };
-        write_pod(buffer, data);
-        write_pod_slice(buffer, &buckets);
-        write_pod_slice(buffer, &chains);
+        buffer.write_pod(data);
+        buffer.write_pod_slice(&buckets);
+        buffer.write_pod_slice(&chains);
     }
 
     /// Return the size of a GNU hash table.
@@ -969,7 +1154,7 @@ impl<E: Endian> Encoder<E> {
             bloom_count: U32::new(self.endian, bloom_count),
             bloom_shift: U32::new(self.endian, bloom_shift),
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
 
         // Calculate and write bloom filter.
         if self.is_64 {
@@ -980,7 +1165,7 @@ impl<E: Endian> Encoder<E> {
                     1 << (h % 64) | 1 << ((h >> bloom_shift) % 64);
             }
             for bloom_filter in bloom_filters {
-                write_pod(buffer, &U64::new(self.endian, bloom_filter));
+                buffer.write_u64(self.endian, bloom_filter);
             }
         } else {
             let mut bloom_filters = vec![0u32; bloom_count as usize];
@@ -990,7 +1175,7 @@ impl<E: Endian> Encoder<E> {
                     1 << (h % 32) | 1 << ((h >> bloom_shift) % 32);
             }
             for bloom_filter in bloom_filters {
-                write_pod(buffer, &U32::new(self.endian, bloom_filter));
+                buffer.write_u32(self.endian, bloom_filter);
             }
         }
 
@@ -1001,16 +1186,16 @@ impl<E: Endian> Encoder<E> {
         for i in 0..symbol_count {
             let symbol_bucket = hash(i) % bucket_count;
             while bucket < symbol_bucket {
-                write_pod(buffer, &U32::new(self.endian, 0u32));
+                buffer.write_u32(self.endian, 0u32);
                 bucket += 1;
             }
             if bucket == symbol_bucket {
-                write_pod(buffer, &U32::new(self.endian, symbol_base + i));
+                buffer.write_u32(self.endian, symbol_base + i);
                 bucket += 1;
             }
         }
         while bucket < bucket_count {
-            write_pod(buffer, &U32::new(self.endian, 0u32));
+            buffer.write_u32(self.endian, 0u32);
             bucket += 1;
         }
 
@@ -1022,7 +1207,7 @@ impl<E: Endian> Encoder<E> {
             } else {
                 h &= !1;
             }
-            write_pod(buffer, &U32::new(self.endian, h));
+            buffer.write_u32(self.endian, h);
         }
     }
 
@@ -1033,7 +1218,7 @@ impl<E: Endian> Encoder<E> {
 
     /// Write a symbol version entry.
     pub fn gnu_versym<W: WritableBuffer + ?Sized>(self, buffer: &mut W, versym: elf::VersymIndex) {
-        write_pod(buffer, &U16::new(self.endian, versym));
+        buffer.write_u16(self.endian, versym);
     }
 
     /// Return the size of a GNU version definition section.
@@ -1065,7 +1250,7 @@ impl<E: Endian> Encoder<E> {
             vd_aux: U32::new(self.endian, vd_aux),
             vd_next: U32::new(self.endian, vd_next),
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
         self.gnu_verdaux(buffer, verdef.aux_count > 1, verdef.name);
     }
 
@@ -1085,7 +1270,7 @@ impl<E: Endian> Encoder<E> {
             vd_aux: U32::new(self.endian, vd_aux),
             vd_next: U32::new(self.endian, vd_next),
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
     }
 
     /// Write a version definition auxiliary entry.
@@ -1101,7 +1286,7 @@ impl<E: Endian> Encoder<E> {
             vda_name: U32::new(self.endian, name),
             vda_next: U32::new(self.endian, vda_next),
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
     }
 
     /// Return the size of a GNU version dependency section.
@@ -1135,7 +1320,7 @@ impl<E: Endian> Encoder<E> {
             vn_aux: U32::new(self.endian, vn_aux),
             vn_next: U32::new(self.endian, vn_next),
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
     }
 
     /// Write a version needed auxiliary entry.
@@ -1157,7 +1342,7 @@ impl<E: Endian> Encoder<E> {
             vna_name: U32::new(self.endian, vernaux.name),
             vna_next: U32::new(self.endian, vna_next),
         };
-        write_pod(buffer, data);
+        buffer.write_pod(data);
     }
 }
 

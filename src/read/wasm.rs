@@ -10,11 +10,12 @@ use core::{slice, str};
 use wasmparser as wp;
 
 use crate::read::{
-    self, Architecture, ComdatKind, CompressedData, CompressedFileRange, Error, Export, FileFlags,
-    Import, NoDynamicRelocationIterator, Object, ObjectComdat, ObjectKind, ObjectSection,
-    ObjectSegment, ObjectSymbol, ObjectSymbolTable, Permissions, ReadError, ReadRef, Relocation,
-    RelocationMap, Result, SectionFlags, SectionIndex, SectionKind, SegmentFlags, SymbolFlags,
-    SymbolIndex, SymbolKind, SymbolScope, SymbolSection,
+    self, Architecture, ComdatKind, CompressedData, CompressedFileRange, Error, FileFlags,
+    NoDynamicRelocationIterator, NoExportIterator, NoImportIterator, NoImportLibraryIterator,
+    Object, ObjectComdat, ObjectKind, ObjectSection, ObjectSegment, ObjectSymbol,
+    ObjectSymbolTable, Permissions, ReadError, ReadRef, Relocation, RelocationMap, Result,
+    SectionFlags, SectionIndex, SectionKind, SegmentFlags, SymbolFlags, SymbolIndex, SymbolKind,
+    SymbolScope, SymbolSection,
 };
 use crate::{RelocationEncoding, RelocationFlags, RelocationKind, RelocationTarget};
 
@@ -597,6 +598,21 @@ impl<'data, R: ReadRef<'data>> Object<'data> for WasmFile<'data, R> {
     where
         Self: 'file,
         'data: 'file;
+    type ImportLibraryIterator<'file>
+        = NoImportLibraryIterator<'data, 'file, R>
+    where
+        Self: 'file,
+        'data: 'file;
+    type ImportIterator<'file>
+        = NoImportIterator<'data, 'file, R>
+    where
+        Self: 'file,
+        'data: 'file;
+    type ExportIterator<'file>
+        = NoExportIterator<'data, 'file, R>
+    where
+        Self: 'file,
+        'data: 'file;
 
     #[inline]
     fn architecture(&self) -> Architecture {
@@ -696,14 +712,19 @@ impl<'data, R: ReadRef<'data>> Object<'data> for WasmFile<'data, R> {
         None
     }
 
-    fn imports(&self) -> Result<Vec<Import<'data>>> {
-        // TODO: return entries in the import section
-        Ok(Vec::new())
+    fn import_libraries(&self) -> Result<Self::ImportLibraryIterator<'_>> {
+        // TODO: return module names in the import section
+        Ok(Default::default())
     }
 
-    fn exports(&self) -> Result<Vec<Export<'data>>> {
+    fn imports(&self) -> Result<Self::ImportIterator<'_>> {
+        // TODO: return entries in the import section
+        Ok(Default::default())
+    }
+
+    fn exports(&self) -> Result<Self::ExportIterator<'_>> {
         // TODO: return entries in the export section
-        Ok(Vec::new())
+        Ok(Default::default())
     }
 
     fn has_debug_symbols(&self) -> bool {

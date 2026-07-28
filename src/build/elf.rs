@@ -12,7 +12,7 @@ use crate::build::{ByteString, Bytes, Error, Id, IdPrivate, Item, Result, Table}
 use crate::elf;
 use crate::read::elf::{FileHeader, ProgramHeader, Rela, SectionHeader, Sym};
 use crate::read::{self, FileKind, ReadRef};
-use crate::write;
+use crate::write::{self, WritableBuffer};
 
 /// A builder for reading, modifying, and then writing ELF files.
 ///
@@ -726,6 +726,8 @@ impl<'data> Builder<'data> {
     }
 
     /// Write the ELF file to the buffer.
+    ///
+    /// This calls [`WritableBuffer::reserve`] with the total file size.
     pub fn write(mut self, buffer: &mut dyn write::WritableBuffer) -> Result<()> {
         struct SectionOut {
             id: SectionId,
@@ -1373,6 +1375,7 @@ impl<'data> Builder<'data> {
         buffer
             .reserve(reserved_len)
             .map_err(|_| Error(format!("Cannot allocate buffer length {reserved_len:#x}")))?;
+        let buffer = &mut write::CountingBuffer::new(buffer);
 
         // Start writing.
         let header = write::elf::FileHeader {
@@ -1549,10 +1552,7 @@ impl<'data> Builder<'data> {
                         encoder.gnu_versym(buffer, elf::VER_NDX_LOCAL.into());
                         for out_dynsym in &out_dynsyms {
                             let symbol = self.dynamic_symbols.get(out_dynsym.id);
-                            let index = elf::VersymIndex::new(
-                                symbol.version.index(),
-                                symbol.version_hidden,
-                            );
+                            let index = symbol.version.index().versym(symbol.version_hidden);
                             encoder.gnu_versym(buffer, index);
                         }
                     }
@@ -1831,7 +1831,7 @@ impl<'data> Builder<'data> {
             }
             encoder.section_header(buffer, &header);
         }
-        debug_assert_eq!(reserved_len, buffer.len());
+        debug_assert_eq!(reserved_len, buffer.count());
         Ok(())
     }
 
@@ -2899,7 +2899,7 @@ pub struct Relocation<const DYNAMIC: bool = false> {
     /// The symbol referenced by the ELF relocation.
     pub symbol: Option<SymbolId<DYNAMIC>>,
     /// The `r_type` field in the ELF relocation.
-    pub r_type: u32,
+    pub r_type: elf::RelocationType,
     /// The `r_addend` field in the ELF relocation.
     ///
     /// Only used if the section type is `SHT_RELA`.

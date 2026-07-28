@@ -116,6 +116,14 @@ impl<'data, R: ReadRef<'data>> ArchiveFile<'data, R> {
             thin,
         };
 
+        let parse_member = |file: &ArchiveFile<'data, R>, tail: &mut u64| {
+            if *tail < len {
+                ArchiveMember::parse(file.data.0, tail, file.names, file.thin).map(Some)
+            } else {
+                Ok(None)
+            }
+        };
+
         // The first few members may be special, so parse them.
         // GNU has:
         // - "/" or "/SYM64/": symbol table (optional)
@@ -123,48 +131,45 @@ impl<'data, R: ReadRef<'data>> ArchiveFile<'data, R> {
         // COFF has:
         // - "/": first linker member
         // - "/": second linker member
-        // - "//": names table
+        // - "//": names table (optional)
+        // - "/<ECSYMBOLS>/": ARM EC symbol table (optional)
         // BSD has:
         // - "__.SYMDEF" or "__.SYMDEF SORTED": symbol table (optional)
         // BSD 64-bit has:
         // - "__.SYMDEF_64" or "__.SYMDEF_64 SORTED": symbol table (optional)
         // BSD may use the extended name for the symbol table. This is handled
         // by `ArchiveMember::parse`.
-        if tail < len {
-            let member = ArchiveMember::parse(data, &mut tail, &[], thin)?;
+        if let Some(member) = parse_member(&file, &mut tail)? {
             if member.name == b"/" {
                 // GNU symbol table (unless we later determine this is COFF).
                 file.kind = ArchiveKind::Gnu;
                 file.symbols = member.file_range();
                 members_offset = tail;
-
-                if tail < len {
-                    let member = ArchiveMember::parse(data, &mut tail, &[], thin)?;
-                    if member.name == b"/" {
+                if let Some(member) = parse_member(&file, &mut tail)? {
+                    if member.name == b"//" {
+                        // GNU names table.
+                        file.names = member.data(data)?;
+                        members_offset = tail;
+                    } else if member.name == b"/" {
                         // COFF linker member.
                         file.kind = ArchiveKind::Coff;
                         file.symbols = member.file_range();
                         members_offset = tail;
-
-                        if tail < len {
-                            let member = ArchiveMember::parse(data, &mut tail, &[], thin)?;
+                        let mut next_member = parse_member(&file, &mut tail)?;
+                        if let Some(member) = &next_member {
                             if member.name == b"//" {
-                                // COFF names table.
+                                // COFF names table (optional if no long names).
                                 file.names = member.data(data)?;
                                 members_offset = tail;
+                                next_member = parse_member(&file, &mut tail)?;
                             }
                         }
-                        if tail < len {
-                            let member = ArchiveMember::parse(data, &mut tail, file.names, thin)?;
+                        if let Some(member) = &next_member {
                             if member.name == b"/<ECSYMBOLS>/" {
-                                // COFF EC Symbol Table.
+                                // COFF EC symbol table.
                                 members_offset = tail;
                             }
                         }
-                    } else if member.name == b"//" {
-                        // GNU names table.
-                        file.names = member.data(data)?;
-                        members_offset = tail;
                     }
                 }
             } else if member.name == b"/SYM64/" {
@@ -172,9 +177,7 @@ impl<'data, R: ReadRef<'data>> ArchiveFile<'data, R> {
                 file.kind = ArchiveKind::Gnu64;
                 file.symbols = member.file_range();
                 members_offset = tail;
-
-                if tail < len {
-                    let member = ArchiveMember::parse(data, &mut tail, &[], thin)?;
+                if let Some(member) = parse_member(&file, &mut tail)? {
                     if member.name == b"//" {
                         // GNU names table.
                         file.names = member.data(data)?;
@@ -1188,6 +1191,63 @@ mod tests {
         let archive = ArchiveFile::parse(&data[..]).unwrap();
         assert_eq!(archive.kind(), ArchiveKind::Gnu);
         assert!(archive.is_thin());
+    }
+
+    #[test]
+    fn coff_ec_symbols() {
+        use alloc::vec::Vec;
+
+        // Append a COFF archive member (header followed by data) to `archive`.
+        fn add_member(archive: &mut Vec<u8>, name: &str, data: &[u8]) {
+            let mut header = [b' '; 60];
+            header[..name.len()].copy_from_slice(name.as_bytes());
+            let size = format!("{}", data.len());
+            header[48..48 + size.len()].copy_from_slice(size.as_bytes());
+            header[58] = b'`';
+            header[59] = b'\n';
+            archive.extend_from_slice(&header);
+            archive.extend_from_slice(data);
+            // Members are padded to an even number of bytes.
+            if data.len() % 2 != 0 {
+                archive.push(b'\n');
+            }
+        }
+
+        // A COFF archive with an EC symbol table but no `//` names table, which
+        // `llvm-ar` omits when all member names fit in the header. The
+        // `/<ECSYMBOLS>/` member must be skipped when iterating members.
+        let mut data = Vec::new();
+        data.extend_from_slice(b"!<arch>\n");
+        add_member(&mut data, "/", &[0, 0, 0, 0]);
+        add_member(&mut data, "/", &[0, 0, 0, 0]);
+        add_member(&mut data, "/<ECSYMBOLS>/", &[1, 0, 1, 0]);
+        add_member(&mut data, "foo.obj/", b"data");
+
+        let archive = ArchiveFile::parse(&data[..]).unwrap();
+        assert_eq!(archive.kind(), ArchiveKind::Coff);
+        let mut members = archive.members();
+        let member = members.next().unwrap().unwrap();
+        assert_eq!(member.name(), b"foo.obj");
+        assert_eq!(member.data(&data[..]).unwrap(), &b"data"[..]);
+        assert!(members.next().is_none());
+
+        // The same archive, but with a `//` names table before the EC symbol
+        // table. The `/<ECSYMBOLS>/` member must still be skipped.
+        let mut data = Vec::new();
+        data.extend_from_slice(b"!<arch>\n");
+        add_member(&mut data, "/", &[0, 0, 0, 0]);
+        add_member(&mut data, "/", &[0, 0, 0, 0]);
+        add_member(&mut data, "//", b"foo.obj/\n");
+        add_member(&mut data, "/<ECSYMBOLS>/", &[1, 0, 1, 0]);
+        add_member(&mut data, "/0", b"data");
+
+        let archive = ArchiveFile::parse(&data[..]).unwrap();
+        assert_eq!(archive.kind(), ArchiveKind::Coff);
+        let mut members = archive.members();
+        let member = members.next().unwrap().unwrap();
+        assert_eq!(member.name(), b"foo.obj");
+        assert_eq!(member.data(&data[..]).unwrap(), &b"data"[..]);
+        assert!(members.next().is_none());
     }
 
     #[test]

@@ -8,7 +8,7 @@ use crate::endian::{Endianness, U32};
 use crate::macho;
 use crate::read::macho::{MachHeader, Nlist};
 use crate::read::{self, FileKind, ReadRef};
-use crate::write;
+use crate::write::{self, WritableBuffer};
 
 /// A builder for reading, modifying, and then writing Mach-O files.
 ///
@@ -27,8 +27,8 @@ pub struct Builder<'data> {
     ///
     /// This is used for aligning segment file offsets.
     ///
-    /// It is set based on the CPU type when reading the Mach-O file,
-    /// or otherwise defaults to 0x4000.
+    /// Defaults to 0x4000. When reading a Mach-O file, this is reduced if
+    /// needed so that it divides every segment file offset.
     pub page_size: u32,
     /// The file header.
     pub header: Header,
@@ -112,15 +112,10 @@ impl<'data> Builder<'data> {
         let header = Mach::parse(data, 0)?;
         let endian = header.endian()?;
 
-        let page_size = match header.cputype(endian) {
-            macho::CPU_TYPE_ARM64 | macho::CPU_TYPE_ARM64_32 => 0x4000,
-            _ => 0x1000,
-        };
-
         let mut builder = Builder {
             endian,
             is_64: header.is_type_64(),
-            page_size,
+            page_size: 0x4000,
             header: Header {
                 cputype: header.cputype(endian),
                 cpusubtype: header.cpusubtype(endian),
@@ -141,15 +136,20 @@ impl<'data> Builder<'data> {
             dylibs_len: 0,
             indirect_symbols: &[][..],
         };
+        let mut page_size_bits = builder.page_size.trailing_zeros();
         let mut commands = header.load_commands(endian, data, 0)?;
         while let Some(command) = commands.next()? {
             use read::macho::LoadCommandVariant;
             match command.variant()? {
                 LoadCommandVariant::Segment32(segment, _) => {
                     state.sections_len += segment.nsects.get(endian) as usize;
+                    let fileoff = segment.fileoff.get(endian);
+                    page_size_bits = page_size_bits.min(fileoff.trailing_zeros());
                 }
                 LoadCommandVariant::Segment64(segment, _) => {
                     state.sections_len += segment.nsects.get(endian) as usize;
+                    let fileoff = segment.fileoff.get(endian);
+                    page_size_bits = page_size_bits.min(fileoff.trailing_zeros());
                 }
                 LoadCommandVariant::Symtab(symtab) => {
                     state.symbols_len = symtab.nsyms.get(endian) as usize;
@@ -163,6 +163,7 @@ impl<'data> Builder<'data> {
                 _ => {}
             }
         }
+        builder.page_size = 1 << page_size_bits;
 
         let mut commands = header.load_commands(endian, data, 0)?;
         while let Some(command) = commands.next()? {
@@ -209,6 +210,15 @@ impl<'data> Builder<'data> {
                         data: val.data(endian, data)?.into(),
                     });
                 }
+                LoadCommandVariant::DyldInfo(val) if command.cmd() == macho::LC_DYLD_INFO_ONLY => {
+                    builder.commands.push(LoadCommand::DyldInfo {
+                        rebase: val.rebase_data(endian, data)?.into(),
+                        bind: val.bind_data(endian, data)?.into(),
+                        weak_bind: val.weak_bind_data(endian, data)?.into(),
+                        lazy_bind: val.lazy_bind_data(endian, data)?.into(),
+                        export: val.export_data(endian, data)?.into(),
+                    });
+                }
                 LoadCommandVariant::BuildVersion(val, tools) => {
                     let tools = val
                         .tools(endian, tools)?
@@ -239,10 +249,23 @@ impl<'data> Builder<'data> {
                     });
                     builder.commands.push(LoadCommand::Dylib(id));
                 }
+                LoadCommandVariant::IdDylib(val) => {
+                    builder.commands.push(LoadCommand::IdDylib(Dylib {
+                        delete: false,
+                        cmd: val.cmd.get(endian),
+                        name: command.string(endian, val.dylib.name)?.into(),
+                        timestamp: val.dylib.timestamp.get(endian),
+                        current_version: val.dylib.current_version.get(endian),
+                        compatibility_version: val.dylib.compatibility_version.get(endian),
+                    }));
+                }
+                // TODO: parse these
                 LoadCommandVariant::LoadDylinker(_)
                 | LoadCommandVariant::SourceVersion(_)
                 | LoadCommandVariant::EntryPoint(_)
-                | LoadCommandVariant::Uuid(_) => {
+                | LoadCommandVariant::Uuid(_)
+                | LoadCommandVariant::EncryptionInfo32(_)
+                | LoadCommandVariant::EncryptionInfo64(_) => {
                     builder.commands.push(LoadCommand::Other {
                         cmd: command.cmd(),
                         data: command.raw_data()
@@ -252,7 +275,7 @@ impl<'data> Builder<'data> {
                 }
                 _ => {
                     return Err(Error(format!(
-                        "Unimplemented load command {:x}",
+                        "Unimplemented load command {:x?}",
                         command.cmd()
                     )));
                 }
@@ -431,6 +454,8 @@ impl<'data> Builder<'data> {
     /// Segment sizes will be calculated based on their contents. The first segment
     /// containing data must leave space for the Mach-O header and load commands between
     /// the segment address and the address of the first section.
+    ///
+    /// This calls [`WritableBuffer::reserve`] with the total file size.
     pub fn write(mut self, buffer: &mut dyn write::WritableBuffer) -> Result<()> {
         struct SegmentOut {
             id: SegmentId,
@@ -606,6 +631,7 @@ impl<'data> Builder<'data> {
                     encoder.build_version_command_size(version.tools.len() as u32)
                 }
                 LoadCommand::LinkeditData { .. } => encoder.linkedit_data_command_size(),
+                LoadCommand::DyldInfo { .. } => encoder.dyld_info_command_size(),
                 LoadCommand::Other { data, .. } => encoder.load_command_size(data.len() as u64),
             };
             offset.reserve(size, 1);
@@ -730,6 +756,19 @@ impl<'data> Builder<'data> {
                     // TODO: align
                     linkedit_offsets.push(offset.reserve(data.len() as u64, address_size).0);
                 }
+            } else if let LoadCommand::DyldInfo {
+                rebase,
+                bind,
+                weak_bind,
+                lazy_bind,
+                export,
+            } = command
+            {
+                for data in [rebase, bind, weak_bind, lazy_bind, export] {
+                    if !data.is_empty() {
+                        linkedit_offsets.push(offset.reserve(data.len() as u64, address_size).0);
+                    }
+                }
             }
         }
 
@@ -785,6 +824,7 @@ impl<'data> Builder<'data> {
         buffer
             .reserve(reserved_len)
             .map_err(|_| Error(format!("Cannot allocate buffer length {reserved_len:#x}")))?;
+        let buffer = &mut write::CountingBuffer::new(buffer);
 
         // Start writing.
         encoder.mach_header(
@@ -907,6 +947,44 @@ impl<'data> Builder<'data> {
                     };
                     encoder.linkedit_data_command(buffer, cmd, offset as u32, data.len() as u32);
                 }
+                LoadCommand::DyldInfo {
+                    ref rebase,
+                    ref bind,
+                    ref weak_bind,
+                    ref lazy_bind,
+                    ref export,
+                } => {
+                    let [
+                        (rebase_off, rebase_size),
+                        (bind_off, bind_size),
+                        (weak_bind_off, weak_bind_size),
+                        (lazy_bind_off, lazy_bind_size),
+                        (export_off, export_size),
+                    ] = [rebase, bind, weak_bind, lazy_bind, export].map(|data| {
+                        let size = data.len() as u32;
+                        if size == 0 {
+                            (0, 0)
+                        } else {
+                            (*linkedit_offsets_iter.next().unwrap() as u32, size)
+                        }
+                    });
+                    encoder.dyld_info_command(
+                        buffer,
+                        macho::LC_DYLD_INFO_ONLY,
+                        &write::macho::DyldInfoCommand {
+                            rebase_off,
+                            rebase_size,
+                            bind_off,
+                            bind_size,
+                            weak_bind_off,
+                            weak_bind_size,
+                            lazy_bind_off,
+                            lazy_bind_size,
+                            export_off,
+                            export_size,
+                        },
+                    );
+                }
                 LoadCommand::Other { cmd, ref data } => {
                     encoder.load_command(buffer, cmd, data.as_slice());
                 }
@@ -961,6 +1039,21 @@ impl<'data> Builder<'data> {
                     buffer.resize(*offset);
                     buffer.write_bytes(data);
                 }
+            } else if let LoadCommand::DyldInfo {
+                rebase,
+                bind,
+                weak_bind,
+                lazy_bind,
+                export,
+            } = command
+            {
+                for data in [rebase, bind, weak_bind, lazy_bind, export] {
+                    if !data.is_empty() {
+                        let offset = linkedit_offsets_iter.next().unwrap();
+                        buffer.resize(*offset);
+                        buffer.write_bytes(data);
+                    }
+                }
             }
         }
 
@@ -1001,7 +1094,7 @@ impl<'data> Builder<'data> {
             }
         }
 
-        debug_assert_eq!(stroff, buffer.len());
+        debug_assert_eq!(stroff, buffer.count());
         buffer.write_bytes(&strtab_data);
 
         // Write code signature.
@@ -1014,7 +1107,7 @@ impl<'data> Builder<'data> {
             }
         }
 
-        debug_assert_eq!(reserved_len, buffer.len());
+        debug_assert_eq!(reserved_len, buffer.count());
         Ok(())
     }
 
@@ -1150,6 +1243,19 @@ pub enum LoadCommand<'data> {
         cmd: macho::LoadCommandType,
         /// Data for the linkedit segment.
         data: Bytes<'data>,
+    },
+    /// `LC_DYLD_INFO_ONLY`.
+    DyldInfo {
+        /// Byte stream of rebase opcodes.
+        rebase: Bytes<'data>,
+        /// Byte stream of bind opcodes.
+        bind: Bytes<'data>,
+        /// Byte stream of weak bind opcodes.
+        weak_bind: Bytes<'data>,
+        /// Byte stream of lazy bind opcodes.
+        lazy_bind: Bytes<'data>,
+        /// Byte stream of export trie.
+        export: Bytes<'data>,
     },
     /// An unrecognized or obsolete load command.
     Other {
@@ -1435,7 +1541,7 @@ pub struct Relocation {
     /// The `r_length` field in the Mach-O relocation.
     pub r_length: u8,
     /// The `r_type` field in the Mach-O relocation.
-    pub r_type: u8,
+    pub r_type: macho::RelocationType,
 }
 
 /// The symbol or section referenced by a Mach-O relocation.
@@ -1584,6 +1690,8 @@ impl IdPrivate for DylibId {
 #[derive(Debug, Clone)]
 pub struct Dylib<'data> {
     /// Ignore this dylib when writing the Mach-O file.
+    ///
+    /// This has no effect for [`LoadCommand::IdDylib`].
     pub delete: bool,
     /// `LC_ID_DYLIB, `LC_LOAD_DYLIB`, `LC_LOAD_WEAK_DYLIB`, `LC_REEXPORT_DYLIB`,
     /// `LC_LAZY_LOAD_DYLIB`, or `LC_LOAD_UPWARD_DYLIB`
