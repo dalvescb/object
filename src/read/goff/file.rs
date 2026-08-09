@@ -671,8 +671,15 @@ where
     }
 
     fn has_debug_symbols(&self) -> bool {
-        // GOFF doesn't provide fixed Debug classes / debug sections
-        unimplemented!();
+        // Check if any symbol name begins with the debug symbol prefix [0xC4, 0x6D] (i.e., the prefix D_ in EBCDIC)
+        self.symbols.values().any(|symbol| {
+            let name_parts = symbol.name_parts();
+            if let Some(first_part) = name_parts.first() {
+                first_part.len() >= 2 && first_part[0] == 0xC4 && first_part[1] == 0x6D
+            } else {
+                false
+            }
+        })
     }
 
     fn relative_address_base(&self) -> u64 {
