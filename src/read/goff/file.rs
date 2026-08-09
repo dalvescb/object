@@ -629,29 +629,8 @@ where
     }
 
     fn dynamic_symbols(&self) -> GoffSymbolIterator<'data, '_, R> {
-        GoffSymbolIterator {
-            file: self,
-            index: SymbolIndex(0),
-            esdid_map: self
-                .symbols
-                .keys()
-                .filter(|idx| {
-                    let Some(sym) = self.symbols.get(idx) else {
-                        return false;
-                    };
-
-                    let scope = sym.behavioral_flags().binding_scope();
-                    let is_explicit_import = sym.symflags & 0x08 != 0;
-                    let is_import_er =
-                        sym.symboltype() == ESD_SYMTYPE_ER && scope == GOFF_SCOPE_IMPORT_EXPORT;
-                    let is_export_def = matches!(sym.symboltype(), ESD_SYMTYPE_ED | ESD_SYMTYPE_LD)
-                        && scope == GOFF_SCOPE_IMPORT_EXPORT;
-
-                    is_explicit_import || is_import_er || is_export_def
-                })
-                .copied()
-                .collect(),
-        }
+        let symbol_table = GoffSymbolTable { file: self };
+        symbol_table.iter_none()
     }
 
     fn dynamic_relocations(&self) -> Option<Self::DynamicRelocationIterator<'_>> {

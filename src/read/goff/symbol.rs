@@ -365,6 +365,16 @@ where
         }
     }
 
+    /// Empty symbol iterator
+    #[inline]
+    pub(super) fn iter_none(&self) -> GoffSymbolIterator<'data, 'file, R> {
+        GoffSymbolIterator {
+            file: self.file,
+            index: SymbolIndex(self.file.symbols.len()),
+            esdid_map: vec![],
+        }
+    }
+
     /// Return true if the symbol table is empty.
     #[inline]
     pub fn is_empty(&self) -> bool {
