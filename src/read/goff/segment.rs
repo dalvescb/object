@@ -2,13 +2,6 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::str;
 
-#[cfg(not(feature = "std"))]
-#[allow(unused_imports)]
-use alloc::collections::btree_map as hash_map;
-#[cfg(feature = "std")]
-#[allow(unused_imports)]
-use std::collections::hash_map;
-
 use crate::goff::*;
 use crate::read::{self, Error, ObjectSegment, ReadRef, Result};
 use crate::{Permissions, SegmentFlags, SymbolIndex};
@@ -21,8 +14,8 @@ pub struct GoffSegmentIterator<'data, 'file, R = &'data [u8]>
 where
     R: ReadRef<'data>,
 {
+    #[allow(unused)]
     pub(super) file: &'file GoffFile<'data, R>,
-    pub(super) iter: hash_map::Keys<'file, SymbolIndex, GoffSegment<'data>>,
 }
 
 impl<'data, 'file, R> Iterator for GoffSegmentIterator<'data, 'file, R>
@@ -32,11 +25,7 @@ where
     type Item = GoffSegmentRef<'data, 'file, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let index = *self.iter.next()?;
-        Some(GoffSegmentRef {
-            file: self.file,
-            index,
-        })
+        None
     }
 }
 

@@ -571,10 +571,7 @@ where
     }
 
     fn segments(&self) -> GoffSegmentIterator<'data, '_, R> {
-        GoffSegmentIterator {
-            file: self,
-            iter: self.segments.keys(),
-        }
+        GoffSegmentIterator { file: self }
     }
 
     fn section_by_name_bytes<'file>(
