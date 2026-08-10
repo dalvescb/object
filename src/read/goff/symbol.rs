@@ -20,19 +20,19 @@ use crate::read::{
 use super::GoffFile;
 
 /// A symbol in an [`GoffFile64`](super::GoffFile64).
-pub type GoffSymbol64<'data> = GoffSymbol<'data>;
+pub type GoffSymbol64 = GoffSymbol;
 
 /// A symbol in an [`GoffFile`].
 ///
 /// Most functionality is provided by the [`ObjectSymbol`] trait implementation.
 #[derive(Debug, Clone)]
-pub struct GoffSymbol<'data> {
+pub struct GoffSymbol {
     /// Symbol table index (same as the ESD Identifier)
     pub(super) symbolindex: SymbolIndex,
     /// ESD Identifier (ESDID).
     pub(super) esdid: u32,
-    /// Symbol name
-    pub(super) name: Vec<&'data [u8]>,
+    /// Symbol name (EBCDIC-encoded, flattened from ESD record and any continuation records)
+    pub(super) name: Vec<u8>,
     /// Symbol Type
     pub(super) symboltype: SymbolType,
     /// Parent of Owning ESDID
@@ -61,7 +61,7 @@ pub struct GoffSymbol<'data> {
     pub(super) namelength: u16,
 }
 
-impl<'data> GoffSymbol<'data> {
+impl GoffSymbol {
     /// Get the ESDID (ESD Identifier) of this symbol.
     #[inline]
     pub fn esdid(&self) -> u32 {
@@ -128,12 +128,12 @@ impl<'data> GoffSymbol<'data> {
         self.namelength
     }
 
-    /// Get the raw EBCDIC-encoded name parts of this symbol.
+    /// Get the raw EBCDIC-encoded name bytes of this symbol.
     ///
-    /// The name is stored as a vector of byte slices in EBCDIC encoding.
+    /// The name is stored as a flat byte vector in EBCDIC encoding.
     /// Use `ebcdic::ebcdic::Ebcdic::ebcdic_to_ascii` to convert to ASCII.
     #[inline]
-    pub fn name_parts(&self) -> &[&'data [u8]] {
+    pub fn name_bytes_owned(&self) -> &[u8] {
         &self.name
     }
 
@@ -157,22 +157,19 @@ impl<'data> GoffSymbol<'data> {
     }
 }
 
-impl<'data> read::private::Sealed for GoffSymbol<'data> {}
+impl<'data> read::private::Sealed for GoffSymbol {}
 
-impl<'data> ObjectSymbol<'data> for GoffSymbol<'data> {
+impl<'data> ObjectSymbol<'data> for GoffSymbol {
     #[inline]
     fn index(&self) -> SymbolIndex {
         self.symbolindex
     }
 
     fn name_bytes(&self) -> Result<&'data [u8]> {
-        match &self.name[..] {
-            [] => Err(Error("Invalid GoffSymbol, empty symbol name")),
-            [single_chunk] => Ok(single_chunk),
-            [..] => Err(Error(
-                "symbol name data is non-contiguous, call TODO method instead",
-            )),
-        }
+        // GOFF symbol names are EBCDIC-encoded; use name_bytes_owned() to access the owned bytes.
+        Err(Error(
+            "GOFF symbol names use EBCDIC encoding, not UTF-8 byte slices",
+        ))
     }
 
     fn name(&self) -> Result<&'data str> {
@@ -288,7 +285,7 @@ impl<'data> ObjectSymbol<'data> for GoffSymbol<'data> {
         // Section definitions and Element definitions are local by default
         let is_section = self.symboltype() == ESD_SYMTYPE_SD || self.symboltype() == ESD_SYMTYPE_ED;
         // Symbol identifiers that are a single EBCDIC encoded space are local
-        let is_local_name = self.name_parts().len() == 1 && self.name_parts()[0] == [0x40];
+        let is_local_name = self.name_bytes_owned() == [0x40u8];
         // If binding scope is section or module symbol is local
         let scope = self.behavioral_flags().binding_scope();
         if is_section || is_local_name || scope == GOFF_SCOPE_SECTION || scope == GOFF_SCOPE_MODULE
@@ -404,7 +401,7 @@ where
 }
 
 impl<'data, 'file, R: ReadRef<'data>> Iterator for GoffSymbolIterator<'data, 'file, R> {
-    type Item = GoffSymbol<'data>;
+    type Item = GoffSymbol;
 
     fn next(&mut self) -> Option<Self::Item> {
         let SymbolIndex(index) = self.index;
@@ -423,7 +420,7 @@ impl<'data, 'file, R: ReadRef<'data>> read::private::Sealed for GoffSymbolTable<
 impl<'data, 'file, R: ReadRef<'data>> ObjectSymbolTable<'data>
     for GoffSymbolTable<'data, 'file, R>
 {
-    type Symbol = GoffSymbol<'data>;
+    type Symbol = GoffSymbol;
     type SymbolIterator = GoffSymbolIterator<'data, 'file, R>;
 
     fn symbols(&self) -> Self::SymbolIterator {

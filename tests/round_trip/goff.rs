@@ -71,25 +71,24 @@ fn goff_basic_structure() {
     let goff = read::goff::GoffFile::parse(&*bytes).unwrap();
 
     // Verify external symbols are present
-    let symbols: Vec<_> = object.symbols().collect();
+    let symbols: Vec<_> = goff.symbols().collect();
     assert!(
         symbols.len() >= 2,
         "Should have at least 2 external symbols"
     );
 
-    // Find our external symbols by comparing EBCDIC bytes directly
+    // Find our external symbols using name_bytes_owned() for direct EBCDIC comparison
     let mut found_ceestart = false;
     let mut found_printf = false;
 
     for symbol in &symbols {
-        if let Ok(name_bytes) = symbol.name_bytes() {
-            if name_bytes == CEESTART_EBCDIC {
-                found_ceestart = true;
-                assert!(symbol.is_undefined());
-            } else if name_bytes == PRINTF_EBCDIC {
-                found_printf = true;
-                assert!(symbol.is_undefined());
-            }
+        let name_bytes = symbol.name_bytes_owned();
+        if name_bytes == CEESTART_EBCDIC {
+            found_ceestart = true;
+            assert!(symbol.is_undefined());
+        } else if name_bytes == PRINTF_EBCDIC {
+            found_printf = true;
+            assert!(symbol.is_undefined());
         }
     }
 

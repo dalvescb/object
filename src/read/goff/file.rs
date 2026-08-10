@@ -42,7 +42,7 @@ where
     pub(super) header: &'data goff::HeaderRecord64,
     pub(super) sections: Vec<SymbolIndex>,
     pub(super) segments: HashMap<SymbolIndex, GoffSegment<'data>>,
-    pub(super) symbols: HashMap<SymbolIndex, GoffSymbol<'data>>,
+    pub(super) symbols: HashMap<SymbolIndex, GoffSymbol>,
     pub(super) relocations: Vec<GoffRelocation>,
     pub(super) record_count: Option<u32>,
     pub(super) entry_name: Vec<&'data [u8]>,
@@ -131,18 +131,20 @@ where
         );
 
         // parse continuations if any (provides name data)
-        let mut cont_data: Vec<&'data [u8]>;
+        let cont_data: Vec<&'data [u8]>;
         if is_continued {
             cont_data = self.parse_continuations(offset)?;
         } else {
             cont_data = Vec::new();
         }
 
-        // names are non-contiguous data encoded in EBCDIC, create vector of raw name data
+        // Flatten name from the ESD record and any continuation records into a single Vec<u8>
         let name_length: usize = esd_record.namelength.get(BE).into();
         let capped_length = name_length.clamp(0, SIZEOF_ESD_DATA);
-        let mut esd_name_data: Vec<&'data [u8]> = vec![&esd_record.name[0..capped_length]];
-        esd_name_data.append(&mut cont_data);
+        let mut esd_name_data: Vec<u8> = esd_record.name[0..capped_length].to_vec();
+        for part in cont_data {
+            esd_name_data.extend_from_slice(part);
+        }
 
         let goffsymbol = GoffSymbol {
             symbolindex: symbolindex,
@@ -476,7 +478,7 @@ where
     ///
     /// **Note:** This is primarily for internal use and testing. For the public API,
     /// use `symbol_table()` which filters out ED/SD symbols.
-    pub fn symbol_records(&self) -> &HashMap<SymbolIndex, GoffSymbol<'data>> {
+    pub fn symbol_records(&self) -> &HashMap<SymbolIndex, GoffSymbol> {
         &self.symbols
     }
 }
@@ -519,7 +521,7 @@ where
         Self: 'file,
         'data: 'file;
     type Symbol<'file>
-        = GoffSymbol<'data>
+        = GoffSymbol
     where
         Self: 'file,
         'data: 'file;
@@ -610,7 +612,7 @@ where
         Some(GoffSymbolTable { file: self })
     }
 
-    fn symbol_by_index(&self, index: SymbolIndex) -> Result<GoffSymbol<'data>> {
+    fn symbol_by_index(&self, index: SymbolIndex) -> Result<GoffSymbol> {
         let symbol_table = self.symbol_table().ok_or(Error("missing symbol table"))?;
         symbol_table.symbol_by_index(index)
     }
@@ -649,12 +651,8 @@ where
     fn has_debug_symbols(&self) -> bool {
         // Check if any symbol name begins with the debug symbol prefix [0xC4, 0x6D] (i.e., the prefix D_ in EBCDIC)
         self.symbols.values().any(|symbol| {
-            let name_parts = symbol.name_parts();
-            if let Some(first_part) = name_parts.first() {
-                first_part.len() >= 2 && first_part[0] == 0xC4 && first_part[1] == 0x6D
-            } else {
-                false
-            }
+            let name = symbol.name_bytes_owned();
+            name.len() >= 2 && name[0] == 0xC4 && name[1] == 0x6D
         })
     }
 

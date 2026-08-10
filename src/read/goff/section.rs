@@ -16,8 +16,6 @@ use crate::read::{
 
 use super::{GoffFile, GoffRelocationIterator};
 
-use alloc::vec::Vec;
-
 /// An iterator for the sections in an [`GoffFile64`](super::GoffFile64).
 pub type GoffSectionIterator64<'data, 'file, R = &'data [u8]> =
     GoffSectionIterator<'data, 'file, R>;
@@ -113,7 +111,7 @@ impl<'data, 'file, R: ReadRef<'data>> GoffSection<'data, 'file, R> {
         data
     }
 
-    /// Returns GOFF section name bytes by collecting the symbol name parts for this section.
+    /// Returns GOFF section name bytes from the flattened symbol name.
     pub fn name_bytes_parts(&self) -> Result<Cow<'data, [u8]>> {
         let symbol = self
             .file
@@ -121,17 +119,11 @@ impl<'data, 'file, R: ReadRef<'data>> GoffSection<'data, 'file, R> {
             .get(&self.esdid)
             .ok_or(Error("Invalid GOFF section ESDID"))?;
 
-        match symbol.name_parts() {
-            [] => Err(Error("Invalid GOFF section, empty section name")),
-            [single_chunk] => Ok(Cow::Borrowed(single_chunk)),
-            parts => {
-                let total_len = parts.iter().map(|part| part.len()).sum();
-                let mut name = Vec::with_capacity(total_len);
-                for part in parts {
-                    name.extend_from_slice(part);
-                }
-                Ok(Cow::Owned(name))
-            }
+        let name = symbol.name_bytes_owned();
+        if name.is_empty() {
+            Err(Error("Invalid GOFF section, empty section name"))
+        } else {
+            Ok(Cow::Owned(name.to_vec()))
         }
     }
 }

@@ -1258,7 +1258,7 @@ where
         ),
     ),
     #[cfg(feature = "goff")]
-    Goff64((goff::GoffSymbol64<'data>, PhantomData<(&'file (), R)>)),
+    Goff64((goff::GoffSymbol64, PhantomData<(&'data (), &'file (), R)>)),
     #[cfg(feature = "macho")]
     MachO32(
         (
