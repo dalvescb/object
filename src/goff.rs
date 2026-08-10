@@ -129,29 +129,6 @@ pub const SIZEOF_RELOCATION_DATA: usize = 74;
 
 /// A single relocation data item within an RLD record.
 /// Size is variable (8-28 bytes) depending on which fields are present as determined by the Flags field.
-/// Multiple relocation data items can be packed into a single RelocationRecord64.
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct RelocationItem64 {
-    /// Flags describing this RLD item. The flags determine which fields are present or absent.
-    pub flags: [u8; 6],
-    /// Reserved field.
-    pub reserved1: [u8; 2],
-    /// ESDID of the ESD entry (ED or ER) which will be used as the basis for relocation.
-    /// For internal references: ED ESDID defining the referenced element.
-    /// For external references: ER or PR ESDID describing the referenced symbol.
-    pub r_pointer: U32<BE>,
-    /// ESDID of the element within which this address constant resides.
-    pub p_pointer: U32<BE>,
-    /// Offset within the element described by the P pointer where the adcon is located.
-    /// This is the fixup target, relocation target, or target field to be updated.
-    pub offset: U32<BE>,
-    /// Reserved field.
-    pub reserved2: U32<BE>,
-    /// Reserved field.
-    pub reserved3: U32<BE>,
-}
-
 /// The relocation directory ("RLD") record.
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -348,24 +325,6 @@ newtype_flag_names!(NAMES_TXT_RECORD: TxtRecordStyle(u8) = {
     TXT_RS_STRUCTURED = 1,
     TXT_RS_UNSTRUCTURED = 2,
 });
-
-/// Symbol table entry
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct Symbol64 {
-    /// ESD Identifier (ESDID).
-    pub esdid: u32,
-    /// Symbol Type
-    pub symboltype: SymbolType,
-    /// Parent of Owning ESDID
-    pub parentesdid: u32,
-    /// Offset.
-    pub offset: u32,
-    /// Length
-    pub length: u32,
-    /// Name Space ID
-    pub namespaceid: EsdNameSpace,
-}
 
 /// All GOFF records have a 3-byte identifying prefix of the following form.
 #[derive(Debug, Clone, Copy)]
@@ -657,11 +616,9 @@ unsafe_impl_pod!(
     SymbolRecord64,
     TextRecord64,
     RelocationRecord64,
-    RelocationItem64,
     ContinuationRecord64,
     LenRecord64,
     LengthDataItem,
     EndRecord64,
-    Symbol64,
     RecordPrefix,
 );
