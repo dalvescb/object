@@ -306,7 +306,7 @@ impl<'a> Writer<'a> {
             flags: 0,
             amode: 0,
             reserved1: [0u8; 3],
-            recordcnt: U32::new(BE, self.logical_record_count), // count includes this END record.
+            record_cnt: U32::new(BE, self.logical_record_count), // count includes this END record.
             esdid: U32::new(BE, 0),
             reserved2: [0u8; 4],
             offset: U32::new(BE, 0),
@@ -329,7 +329,7 @@ impl<'a> Writer<'a> {
             .with_binding_scope(goff::GOFF_SCOPE_IMPORT_EXPORT)
             .with_alignment(goff::GOFF_ALIGN_32BYTE)
             .build();
-        er.behavioralattributes = attrs;
+        er.behavioral_attributes = attrs;
 
         return self.write_esd_record(&er, symbol_name);
     }
@@ -341,7 +341,7 @@ impl<'a> Writer<'a> {
     pub fn write_wsa_symbol(&mut self, symbol_name: &[u8], symbol_length: u32) -> u32 {
         // Emit parent C_WSA64 ED symbol (data section).
         let mut ed = self.get_esd_record(goff::ESD_SYMTYPE_ED, goff::ESD_NS_PARTS, self.cu_esdid);
-        ed.symflags = 0x80; // Fill byte present
+        ed.sym_flags = 0x80; // Fill byte present
 
         let ed_attrs = BehavioralAttributesBuilder::for_data_section()
             .with_binding_algorithm(goff::GOFF_BIND_MERGE)
@@ -349,7 +349,7 @@ impl<'a> Writer<'a> {
             .with_binding_scope(goff::GOFF_SCOPE_IMPORT_EXPORT)
             .with_alignment(goff::GOFF_ALIGN_HALFWORD)
             .build();
-        ed.behavioralattributes = ed_attrs;
+        ed.behavioral_attributes = ed_attrs;
         let ed_esdid = self.write_esd_record(&ed, EBCDIC_C_WSA64);
 
         // Emit PR child symbol using write_pr method.
@@ -366,7 +366,7 @@ impl<'a> Writer<'a> {
     pub fn write_debug_section_symbol(&mut self, section_name: &[u8], section_length: u32) -> u32 {
         // Emit ED symbol for debug section.
         let mut ed = self.get_esd_record(goff::ESD_SYMTYPE_ED, goff::ESD_NS_PARTS, self.cu_esdid);
-        ed.symflags = 0x80; // Fill byte present
+        ed.sym_flags = 0x80; // Fill byte present
         ed.length = U32::new(BE, section_length);
 
         // Debug sections are read-only data that must be loaded
@@ -376,7 +376,7 @@ impl<'a> Writer<'a> {
             .with_loading(goff::GOFF_LOAD)
             .with_alignment(goff::GOFF_ALIGN_BYTE)
             .build();
-        ed.behavioralattributes = attrs;
+        ed.behavioral_attributes = attrs;
 
         return self.write_esd_record(&ed, section_name);
     }
@@ -390,7 +390,7 @@ impl<'a> Writer<'a> {
             goff::ESD_NS_PROGRAM_MANAGEMENT_BINDER,
             0, // No parent for SD
         );
-        sd.behavioralattributes = attributes;
+        sd.behavioral_attributes = attributes;
         self.write_esd_record(&sd, name)
     }
 
@@ -407,8 +407,8 @@ impl<'a> Writer<'a> {
         let mut ed =
             self.get_esd_record(goff::ESD_SYMTYPE_ED, goff::ESD_NS_NORMAL_NAME, parent_esdid);
         ed.length = U32::new(BE, length);
-        ed.symflags = 0x80; // Fill byte present
-        ed.behavioralattributes = attributes;
+        ed.sym_flags = 0x80; // Fill byte present
+        ed.behavioral_attributes = attributes;
         self.write_esd_record(&ed, name)
     }
 
@@ -429,7 +429,7 @@ impl<'a> Writer<'a> {
         let attrs = BehavioralAttributesBuilder::new()
             .with_binding_scope(scope)
             .build();
-        ld.behavioralattributes = attrs;
+        ld.behavioral_attributes = attrs;
 
         self.write_esd_record(&ld, name)
     }
@@ -446,7 +446,7 @@ impl<'a> Writer<'a> {
     ) -> u32 {
         let mut pr = self.get_esd_record(goff::ESD_SYMTYPE_PR, goff::ESD_NS_PARTS, parent_esdid);
         pr.length = U32::new(BE, length);
-        pr.behavioralattributes = attributes;
+        pr.behavioral_attributes = attributes;
         self.write_esd_record(&pr, name)
     }
 
@@ -464,7 +464,7 @@ impl<'a> Writer<'a> {
             .with_binding_strength(goff::GOFF_BIND_WEAK)
             .with_binding_scope(goff::GOFF_SCOPE_IMPORT_EXPORT)
             .build();
-        er.behavioralattributes = attrs;
+        er.behavioral_attributes = attrs;
 
         self.write_esd_record(&er, name)
     }
@@ -573,31 +573,31 @@ impl<'a> Writer<'a> {
 
     pub fn get_esd_record(
         &self,
-        symboltype: goff::SymbolType,
-        namespaceid: goff::EsdNameSpace,
-        parentesdid: u32,
+        symbol_type: goff::SymbolType,
+        namespace_id: goff::EsdNameSpace,
+        parent_esdid: u32,
     ) -> goff::SymbolRecord64 {
         return goff::SymbolRecord64 {
             ptv: goff::GOFF_ESD_BYTES,
-            symboltype: symboltype,
+            symbol_type: symbol_type,
             esdid: U32::new(BE, self.next_esdid),
-            parentesdid: U32::new(BE, parentesdid),
+            parent_esdid: U32::new(BE, parent_esdid),
             reserved1: U32::new(BE, 0),
             offset: U32::new(BE, 0),
             reserved2: U32::new(BE, 0),
             length: U32::new(BE, 0),
-            eaesdid: U32::new(BE, 0),
-            eadataoffset: U32::new(BE, 0),
+            ea_esdid: U32::new(BE, 0),
+            ea_data_offset: U32::new(BE, 0),
             reserved3: U32::new(BE, 0),
-            namespaceid: namespaceid,
-            symflags: 0,
-            fillbytevalue: 0,
+            namespace_id: namespace_id,
+            sym_flags: 0,
+            fill_byte_value: 0,
             reserved4: 0,
-            adaesdid: U32::new(BE, 0),
+            ada_esdid: U32::new(BE, 0),
             priority: U32::new(BE, 0),
             reserved5: [0u8; 8],
-            behavioralattributes: [0u8; 10],
-            namelength: U16::new(BE, 0),
+            behavioral_attributes: [0u8; 10],
+            name_length: U16::new(BE, 0),
             name: [0u8; goff::SIZEOF_ESD_DATA],
         };
     }
@@ -611,7 +611,7 @@ impl<'a> Writer<'a> {
             ptv[1] |= 0x1;
         }
         esd_record.ptv = ptv;
-        esd_record.namelength = U16::new(BE, name.len() as u16);
+        esd_record.name_length = U16::new(BE, name.len() as u16);
         esd_record.name[..record_name_len].copy_from_slice(&name[..record_name_len]);
 
         self.next_esdid += 1;
@@ -677,13 +677,13 @@ impl<'a> Writer<'a> {
 
             let mut record = goff::TextRecord64 {
                 ptv: ptv,
-                recordstyle: goff::TxtRecordStyle(record_style),
-                elementesdid: U32::new(BE, esdid),
+                record_style: goff::TxtRecordStyle(record_style),
+                element_esdid: U32::new(BE, esdid),
                 reserved1: U32::new(BE, 0),
                 offset: U32::new(BE, offset as u32),
-                truelength: U32::new(BE, 0),
-                textencoding: U16::new(BE, 0),
-                datalength: U16::new(BE, logical_write_len as u16),
+                true_length: U32::new(BE, 0),
+                text_encoding: U16::new(BE, 0),
+                data_length: U16::new(BE, logical_write_len as u16),
                 data: [0u8; goff::SIZEOF_TXT_DATA],
             };
             record.data[..record_data_len].copy_from_slice(&data[offset..offset + record_data_len]);

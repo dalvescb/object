@@ -84,12 +84,12 @@ impl<'data, 'file, R: ReadRef<'data>> GoffSection<'data, 'file, R> {
     /// Check if an ESDID is a descendant (child, grandchild, etc.) of a parent ESDID
     fn is_descendant_of(&self, esdid: &SymbolIndex, parent_esdid: &SymbolIndex) -> bool {
         if let Some(symbol) = self.file.symbols.get(esdid) {
-            if symbol.parentesdid == *parent_esdid {
+            if symbol.parent_esdid == *parent_esdid {
                 return true;
             }
             // Recursively check if this symbol's parent is a descendant
-            if symbol.parentesdid != *esdid {
-                return self.is_descendant_of(&symbol.parentesdid, parent_esdid);
+            if symbol.parent_esdid != *esdid {
+                return self.is_descendant_of(&symbol.parent_esdid, parent_esdid);
             }
         }
         false
@@ -159,7 +159,7 @@ where
             .get(&self.esdid)
             .map(|symbol| {
                 // Extract alignment from byte 6 (index 5) bits 3-7 of behavioral attributes
-                let align_flags = goff::AlignmentFlags(symbol.behavioralattributes[5] & 0xF8);
+                let align_flags = goff::AlignmentFlags(symbol.behavioral_attributes[5] & 0xF8);
                 match align_flags {
                     goff::GOFF_ALIGN_BYTE => 1,
                     goff::GOFF_ALIGN_HALFWORD => 2,
@@ -274,7 +274,7 @@ where
             .symbols
             .get(&self.esdid)
             .map(|symbol| {
-                let attrs = &symbol.behavioralattributes;
+                let attrs = &symbol.behavioral_attributes;
                 SectionFlags::Goff {
                     flags: goff::SectionFlags {
                         amode: goff::AmodeFlags(attrs[0]),

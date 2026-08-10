@@ -125,7 +125,7 @@ where
         let symbolindex = SymbolIndex(
             usize::try_from(esdid).expect("Target architecture pointer size is too small"),
         );
-        let parent_esdid = esd_record.parentesdid.get(BE);
+        let parent_esdid = esd_record.parent_esdid.get(BE);
         let parent_symbolindex = SymbolIndex(
             usize::try_from(parent_esdid).expect("Target architecture pointer size is too small"),
         );
@@ -139,7 +139,7 @@ where
         }
 
         // Flatten name from the ESD record and any continuation records into a single Vec<u8>
-        let name_length: usize = esd_record.namelength.get(BE).into();
+        let name_length: usize = esd_record.name_length.get(BE).into();
         let capped_length = name_length.clamp(0, SIZEOF_ESD_DATA);
         let mut esd_name_data: Vec<u8> = esd_record.name[0..capped_length].to_vec();
         for part in cont_data {
@@ -147,28 +147,28 @@ where
         }
 
         let goffsymbol = GoffSymbol {
-            symbolindex: symbolindex,
+            symbol_index: symbolindex,
             esdid: esdid,
             name: esd_name_data,
-            symboltype: esd_record.symboltype,
-            parentesdid: parent_symbolindex,
+            symbol_type: esd_record.symbol_type,
+            parent_esdid: parent_symbolindex,
             offset: esd_record.offset.get(BE),
             length: esd_record.length.get(BE),
-            eaesdid: esd_record.eaesdid.get(BE),
-            eadataoffset: esd_record.eadataoffset.get(BE),
-            namespaceid: esd_record.namespaceid,
-            symflags: esd_record.symflags,
-            fillbytevalue: esd_record.fillbytevalue,
-            adaesdid: esd_record.adaesdid.get(BE),
+            ea_esdid: esd_record.ea_esdid.get(BE),
+            ea_data_offset: esd_record.ea_data_offset.get(BE),
+            namespace_id: esd_record.namespace_id,
+            sym_flags: esd_record.sym_flags,
+            fill_byte_value: esd_record.fill_byte_value,
+            ada_esdid: esd_record.ada_esdid.get(BE),
             priority: esd_record.priority.get(BE),
-            behavioralattributes: esd_record.behavioralattributes,
-            namelength: esd_record.namelength.get(BE),
+            behavioral_attributes: esd_record.behavioral_attributes,
+            name_length: esd_record.name_length.get(BE),
         };
         // insert into symbol table (and section table if appropriate)
         self.symbols.insert(symbolindex, goffsymbol);
         // Only ED (Element Definition) represents user sections
         // SD (Section Definition) is the compile unit, not a user section
-        if esd_record.symboltype == ESD_SYMTYPE_ED {
+        if esd_record.symbol_type == ESD_SYMTYPE_ED {
             self.sections.push(symbolindex);
         }
 
@@ -181,7 +181,7 @@ where
             .data
             .read::<TextRecord64>(offset)
             .map_err(|_| Error("failed to read txt record"))?;
-        let esdid = txt_record.elementesdid.get(BE);
+        let esdid = txt_record.element_esdid.get(BE);
 
         let symbolindex = SymbolIndex(
             usize::try_from(esdid).expect("Target architecture pointer size is too small"),
@@ -192,9 +192,9 @@ where
             .symbols
             .get(&symbolindex)
             .ok_or(Error("txt record references undefined symbol"))?;
-        let ed_symbolindex: SymbolIndex = match symbol.symboltype() {
+        let ed_symbolindex: SymbolIndex = match symbol.symbol_type() {
             ESD_SYMTYPE_ED => symbolindex,
-            _ => symbol.parentesdid(),
+            _ => symbol.parent_esdid(),
         };
 
         // Parse continuations if any
@@ -206,16 +206,16 @@ where
         }
 
         // Create text reference
-        let data_length = usize::from(txt_record.datalength.get(BE));
+        let data_length = usize::from(txt_record.data_length.get(BE));
         // Only slice up to the size of the data field in this record (56 bytes max)
         let initial_data_len = data_length.min(goff::SIZEOF_TXT_DATA);
         let mut text_ref = GoffTextReference {
             esdid: symbolindex,
-            recordstyle: txt_record.recordstyle,
+            record_style: txt_record.record_style,
             offset: txt_record.offset.get(BE),
-            true_length: txt_record.truelength.get(BE),
-            text_encoding: txt_record.textencoding.get(BE),
-            data_length: txt_record.datalength.get(BE),
+            true_length: txt_record.true_length.get(BE),
+            text_encoding: txt_record.text_encoding.get(BE),
+            data_length: txt_record.data_length.get(BE),
             text_data: vec![&txt_record.data[..initial_data_len]],
         };
         text_ref.text_data.append(&mut cont_data);
@@ -248,7 +248,7 @@ where
             .map_err(|_| Error("failed to read end record"))?;
 
         // Parse record count and entry flags first
-        self.record_count = Some(end_record.recordcnt.get(BE)).filter(|&cnt| cnt != 0);
+        self.record_count = Some(end_record.record_cnt.get(BE)).filter(|&cnt| cnt != 0);
         self.entry_flags = Some(end_record.flags).filter(|&flags| flags != 0);
 
         // If entry flags are empty (i.e, 0) no entry point specified and no need to continue

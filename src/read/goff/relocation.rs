@@ -175,12 +175,12 @@ where
     /// Check if an ESDID is a descendant (child, grandchild, etc.) of a parent ESDID
     fn is_descendant_of(&self, esdid: &SymbolIndex, parent_esdid: &SymbolIndex) -> bool {
         if let Some(symbol) = self.file.symbols.get(esdid) {
-            if symbol.parentesdid == *parent_esdid {
+            if symbol.parent_esdid == *parent_esdid {
                 return true;
             }
             // Recursively check if this symbol's parent is a descendant
-            if symbol.parentesdid != *esdid {
-                return self.is_descendant_of(&symbol.parentesdid, parent_esdid);
+            if symbol.parent_esdid != *esdid {
+                return self.is_descendant_of(&symbol.parent_esdid, parent_esdid);
             }
         }
         false
@@ -189,7 +189,7 @@ where
     /// Get the symbol type for a given ESDID
     fn get_symbol_type(&self, esdid: u32) -> Option<SymbolType> {
         let symbol_index = SymbolIndex(esdid as usize);
-        self.file.symbols.get(&symbol_index).map(|s| s.symboltype)
+        self.file.symbols.get(&symbol_index).map(|s| s.symbol_type)
     }
 
     /// Find the section index for a given ESDID

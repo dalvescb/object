@@ -35,11 +35,11 @@ pub struct SymbolRecord64 {
     /// Type of record. Must be 0x030000 or 0x030100.
     pub ptv: [u8; 3],
     /// Symbol Type.
-    pub symboltype: SymbolType,
+    pub symbol_type: SymbolType,
     /// ESD Identifier (ESDID).
     pub esdid: U32<BE>,
     /// Parent of Owning ESDID
-    pub parentesdid: U32<BE>,
+    pub parent_esdid: U32<BE>,
     /// Reserved. Must be 4 bytes of 0.
     pub reserved1: U32<BE>,
     /// Offset.
@@ -49,29 +49,29 @@ pub struct SymbolRecord64 {
     /// Length (size of allocated memory of program element or section)
     pub length: U32<BE>,
     /// Extended Attribute ESDID
-    pub eaesdid: U32<BE>,
+    pub ea_esdid: U32<BE>,
     /// Extended Attribute Data Offset
-    pub eadataoffset: U32<BE>,
+    pub ea_data_offset: U32<BE>,
     /// Reserved. Must be 4 bytes of 0.
     pub reserved3: U32<BE>,
     /// Name Space ID
-    pub namespaceid: EsdNameSpace,
+    pub namespace_id: EsdNameSpace,
     /// Symbol Flags.
-    pub symflags: u8,
+    pub sym_flags: u8,
     /// Fill Byte Value (the specific 1-byte value used to pad memory)
-    pub fillbytevalue: u8,
+    pub fill_byte_value: u8,
     /// Reserved. Must be 1 bytes of 0.
     pub reserved4: u8,
     /// Associated data ID
-    pub adaesdid: U32<BE>,
+    pub ada_esdid: U32<BE>,
     /// Priority
     pub priority: U32<BE>,
     /// Reserved. Must be 8 bytes of 0.
     pub reserved5: [u8; 8],
     /// Behavioral Attributes
-    pub behavioralattributes: [u8; 10],
+    pub behavioral_attributes: [u8; 10],
     /// Name Length
-    pub namelength: U16<BE>,
+    pub name_length: U16<BE>,
     /// Name
     pub name: [u8; SIZEOF_ESD_DATA],
 }
@@ -80,17 +80,17 @@ impl SymbolRecord64 {
     /// Convert the behavioral attributes byte array to a structured SectionFlags
     pub fn behavioral_flags(&self) -> SectionFlags {
         SectionFlags {
-            amode: AmodeFlags(self.behavioralattributes[0]),
-            rmode: RmodeFlags(self.behavioralattributes[1]),
-            text_and_binding: self.behavioralattributes[2],
-            tasking_and_exec: self.behavioralattributes[3],
-            dup_and_strength: self.behavioralattributes[4],
-            loading_and_scope: self.behavioralattributes[5],
-            linkage_and_align: self.behavioralattributes[6],
+            amode: AmodeFlags(self.behavioral_attributes[0]),
+            rmode: RmodeFlags(self.behavioral_attributes[1]),
+            text_and_binding: self.behavioral_attributes[2],
+            tasking_and_exec: self.behavioral_attributes[3],
+            dup_and_strength: self.behavioral_attributes[4],
+            loading_and_scope: self.behavioral_attributes[5],
+            linkage_and_align: self.behavioral_attributes[6],
             reserved: [
-                self.behavioralattributes[7],
-                self.behavioralattributes[8],
-                self.behavioralattributes[9],
+                self.behavioral_attributes[7],
+                self.behavioral_attributes[8],
+                self.behavioral_attributes[9],
             ],
         }
     }
@@ -107,19 +107,19 @@ pub struct TextRecord64 {
     /// Type of record. Must be 0x031000 or 0x031100.
     pub ptv: [u8; 3],
     /// Text Record Style
-    pub recordstyle: TxtRecordStyle,
+    pub record_style: TxtRecordStyle,
     /// Element ESDID
-    pub elementesdid: U32<BE>,
+    pub element_esdid: U32<BE>,
     /// Reserved. Must be 4 bytes of 0.
     pub reserved1: U32<BE>,
     /// Offset.
     pub offset: U32<BE>,
     /// Text Field True Length
-    pub truelength: U32<BE>,
+    pub true_length: U32<BE>,
     /// Text Encoding
-    pub textencoding: U16<BE>,
+    pub text_encoding: U16<BE>,
     /// Data Length
-    pub datalength: U16<BE>,
+    pub data_length: U16<BE>,
     /// Data
     pub data: [u8; SIZEOF_TXT_DATA],
 }
@@ -201,7 +201,7 @@ pub struct EndRecord64 {
     /// Reserved. Must be 3 bytes of 0.
     pub reserved1: [u8; 3],
     /// Record Count.
-    pub recordcnt: U32<BE>,
+    pub record_cnt: U32<BE>,
     /// ESDID
     pub esdid: U32<BE>,
     /// Reserved. Must be 4 bytes of 0.
@@ -308,7 +308,7 @@ newtype!(
     struct EsdNameSpace(u8);
 );
 
-newtype_flag_names!(NAMES_ESD_NAMSPACE: EsdNameSpace(u8) = {
+newtype_flag_names!(NAMES_ESD_NAMESPACE: EsdNameSpace(u8) = {
     ESD_NS_PROGRAM_MANAGEMENT_BINDER = 0,
     ESD_NS_NORMAL_NAME = 1,
     ESD_NS_PSEUDO_REGISTER = 2,

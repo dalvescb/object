@@ -36,7 +36,7 @@ pub struct GoffTextReference<'data> {
     /// ESDID (either a PR, LD or ED)
     pub(super) esdid: SymbolIndex,
     /// Text Record Style
-    pub(super) recordstyle: TxtRecordStyle,
+    pub(super) record_style: TxtRecordStyle,
     /// Starting offset from the element or part origin of the text
     pub(super) offset: u32,
     /// Text length after data encoding expansion (zero if encoding is zero)
@@ -56,8 +56,8 @@ impl<'data> GoffTextReference<'data> {
     }
 
     /// Returns the text record style.
-    pub fn recordstyle(&self) -> TxtRecordStyle {
-        self.recordstyle
+    pub fn record_style(&self) -> TxtRecordStyle {
+        self.record_style
     }
 
     /// Returns the starting offset from the element or part origin of the text.

@@ -728,13 +728,13 @@ pub enum SymbolFlags<Section, Symbol> {
     /// GOFF symbol flags.
     #[cfg(feature = "goff")]
     Goff {
-        /// `symboltype` field in the GOFF ESD record.
+        /// `symbol_type` field in the GOFF ESD record.
         symboltype: crate::goff::SymbolType,
-        /// `symflags` field in the GOFF ESD record.
+        /// `sym_flags` field in the GOFF ESD record.
         symflags: u8,
-        /// `namespaceid` field in the GOFF ESD record.
+        /// `namespace_id` field in the GOFF ESD record.
         namespaceid: u8,
-        /// `behavioralattributes` field in the GOFF ESD record.
+        /// `behavioral_attributes` field in the GOFF ESD record.
         behavioral_attributes: [u8; 10],
     },
     #[doc(hidden)]
