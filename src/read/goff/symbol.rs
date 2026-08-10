@@ -285,7 +285,8 @@ impl<'data> ObjectSymbol<'data> for GoffSymbol {
     #[inline]
     fn is_global(&self) -> bool {
         // Section definitions and Element definitions are local by default
-        let is_section = self.symbol_type() == ESD_SYMTYPE_SD || self.symbol_type() == ESD_SYMTYPE_ED;
+        let is_section =
+            self.symbol_type() == ESD_SYMTYPE_SD || self.symbol_type() == ESD_SYMTYPE_ED;
         // Symbol identifiers that are a single EBCDIC encoded space are local
         let is_local_name = self.name_bytes_owned() == [0x40u8];
         // If binding scope is section or module symbol is local
@@ -429,19 +430,7 @@ impl<'data, 'file, R: ReadRef<'data>> ObjectSymbolTable<'data>
         GoffSymbolIterator {
             file: self.file,
             index: SymbolIndex(0),
-            esdid_map: self
-                .file
-                .symbols
-                .keys()
-                .filter(|idx| {
-                    if let Some(sym) = self.file.symbols.get(idx) {
-                        sym.symbol_type != ESD_SYMTYPE_ED && sym.symbol_type != ESD_SYMTYPE_SD
-                    } else {
-                        false
-                    }
-                })
-                .copied()
-                .collect(),
+            esdid_map: self.file.symbols.keys().copied().collect(),
         }
     }
 
@@ -451,13 +440,6 @@ impl<'data, 'file, R: ReadRef<'data>> ObjectSymbolTable<'data>
             .symbols
             .get(&index)
             .ok_or(Error("Symbol index out of bounds"))?;
-
-        // Reject ED and SD symbols from public API
-        if symbol.symbol_type == ESD_SYMTYPE_ED || symbol.symbol_type == ESD_SYMTYPE_SD {
-            return Err(Error(
-                "ED and SD symbols are internal and not exposed in public API",
-            ));
-        }
 
         Ok(symbol.clone())
     }
