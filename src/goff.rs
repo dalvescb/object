@@ -520,8 +520,8 @@ pub const GOFF_READ_ONLY: u8 = 0x10;
 pub const GOFF_COMMON: u8 = 0x04;
 /// Indirect reference flag - Byte 5 bit 3
 pub const GOFF_INDIRECT: u8 = 0x08;
-/// XPLINK linkage flag - Byte 6 bit 2
-pub const GOFF_LINKAGE_XPLINK: u8 = 0x04;
+/// XPLINK linkage flag - Byte 6 bit 2 (IBM bit numbering, which is bit 5 in standard 0-indexed from right)
+pub const GOFF_LINKAGE_XPLINK: u8 = 0x20;
 
 /// GOFF Behavioral Attributes - complete 10-byte structure from ESD records
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
