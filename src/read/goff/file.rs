@@ -145,6 +145,8 @@ where
         for part in cont_data {
             esd_name_data.extend_from_slice(part);
         }
+        // Trim to declared name_length (continuation payloads are zero-padded to 77 bytes)
+        esd_name_data.truncate(name_length);
 
         let goffsymbol = GoffSymbol {
             symbol_index: symbolindex,
@@ -198,7 +200,7 @@ where
         };
 
         // Parse continuations if any
-        let mut cont_data: Vec<&'data [u8]>;
+        let cont_data: Vec<&'data [u8]>;
         if is_continued {
             cont_data = self.parse_continuations(offset)?;
         } else {
@@ -218,7 +220,14 @@ where
             data_length: txt_record.data_length.get(BE),
             text_data: vec![&txt_record.data[..initial_data_len]],
         };
-        text_ref.text_data.append(&mut cont_data);
+        // Trim each continuation slice so we don't append zero-padding.
+        // Continuation payloads are 77 bytes but only `remaining` of them hold real data.
+        let mut remaining = data_length - initial_data_len;
+        for part in cont_data {
+            let take = remaining.min(part.len());
+            text_ref.text_data.push(&part[..take]);
+            remaining -= take;
+        }
 
         // Update segments map with new text data if ED ESDID already exists
         if let Some(segment) = self.segments.get_mut(&ed_symbolindex) {
@@ -268,8 +277,14 @@ where
 
         // If entry name is too large, need to parse the rest from continuation records
         if is_continued {
-            let mut name_data = self.parse_continuations(offset)?;
-            self.entry_name.append(&mut name_data);
+            let name_data = self.parse_continuations(offset)?;
+            // Trim continuation slices to avoid appending zero-padding.
+            let mut remaining = name_length - capped_length;
+            for part in name_data {
+                let take = remaining.min(part.len());
+                self.entry_name.push(&part[..take]);
+                remaining -= take;
+            }
         }
         Ok(())
     }
