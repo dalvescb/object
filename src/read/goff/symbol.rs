@@ -341,27 +341,11 @@ where
     R: ReadRef<'data>,
 {
     /// Iterate over the symbols.
-    ///
-    /// Note: This filters out ED (Element Definition) and SD (Section Definition)
-    /// symbols as they represent structural metadata rather than user-visible symbols.
     #[inline]
     pub fn iter(&self) -> GoffSymbolIterator<'data, 'file, R> {
         GoffSymbolIterator {
             file: self.file,
-            index: SymbolIndex(0),
-            esdid_map: self
-                .file
-                .symbols
-                .keys()
-                .filter(|idx| {
-                    if let Some(sym) = self.file.symbols.get(idx) {
-                        sym.symbol_type != ESD_SYMTYPE_ED && sym.symbol_type != ESD_SYMTYPE_SD
-                    } else {
-                        false
-                    }
-                })
-                .copied()
-                .collect(),
+            index: SymbolIndex(1),
         }
     }
 
@@ -371,7 +355,6 @@ where
         GoffSymbolIterator {
             file: self.file,
             index: SymbolIndex(self.file.symbols.len()),
-            esdid_map: vec![],
         }
     }
 
@@ -400,7 +383,6 @@ where
 {
     pub(super) file: &'file GoffFile<'data, R>,
     pub(super) index: SymbolIndex,
-    pub(super) esdid_map: Vec<SymbolIndex>,
 }
 
 impl<'data, 'file, R: ReadRef<'data>> Iterator for GoffSymbolIterator<'data, 'file, R> {
@@ -408,10 +390,15 @@ impl<'data, 'file, R: ReadRef<'data>> Iterator for GoffSymbolIterator<'data, 'fi
 
     fn next(&mut self) -> Option<Self::Item> {
         let SymbolIndex(index) = self.index;
-        let esdid = self.esdid_map.get(index)?;
-        let symbol = self.file.symbols.get(esdid)?.clone();
-        self.index = SymbolIndex(index + 1);
-        Some(symbol)
+        if let Some(max_index) = self.file.symbols.keys().max() {
+            if self.index > *max_index {
+                return None;
+            }
+            let symbol = self.file.symbols.get(&self.index)?.clone();
+            self.index = SymbolIndex(index + 1);
+            return Some(symbol);
+        }
+        None
     }
 }
 
@@ -429,8 +416,7 @@ impl<'data, 'file, R: ReadRef<'data>> ObjectSymbolTable<'data>
     fn symbols(&self) -> Self::SymbolIterator {
         GoffSymbolIterator {
             file: self.file,
-            index: SymbolIndex(0),
-            esdid_map: self.file.symbols.keys().copied().collect(),
+            index: SymbolIndex(1),
         }
     }
 
