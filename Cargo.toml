@@ -107,6 +107,10 @@ unstable-all = ["all", "unstable"]
 # stable interface of this crate.
 rustc-dep-of-std = ['core', 'alloc', 'memchr/rustc-dep-of-std']
 
+
+[dev-dependencies]
+ebcdic = "0.1"
+
 [lints.clippy]
 # Style.
 collapsible_else_if = "allow"
