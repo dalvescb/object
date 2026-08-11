@@ -514,13 +514,13 @@ newtype_flag_names!(NAMES_GOFF_ALIGNMENT: AlignmentFlags(u8) = {
 });
 
 /// Additional behavioral attribute flags (single-bit flags)
-/// Read-only flag - Byte 3 bit 4
-pub const GOFF_READ_ONLY: u8 = 0x10;
-/// COMMON flag - Byte 5 bit 2
-pub const GOFF_COMMON: u8 = 0x04;
-/// Indirect reference flag - Byte 5 bit 3
-pub const GOFF_INDIRECT: u8 = 0x08;
-/// XPLINK linkage flag - Byte 6 bit 2 (IBM bit numbering, which is bit 5 in standard 0-indexed from right)
+/// Read-only flag - Byte 3 bit 4 (IBM bit numbering: bit 0 is leftmost/MSB)
+pub const GOFF_READ_ONLY: u8 = 0x08;
+/// COMMON flag - Byte 5 bit 2 (IBM bit numbering: bit 0 is leftmost/MSB)
+pub const GOFF_COMMON: u8 = 0x20;
+/// Indirect reference flag - Byte 5 bit 3 (IBM bit numbering: bit 0 is leftmost/MSB)
+pub const GOFF_INDIRECT: u8 = 0x10;
+/// XPLINK linkage flag - Byte 6 bit 2 (IBM bit numbering: bit 0 is leftmost/MSB)
 pub const GOFF_LINKAGE_XPLINK: u8 = 0x20;
 
 /// GOFF Behavioral Attributes - complete 10-byte structure from ESD records
