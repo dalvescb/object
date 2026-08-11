@@ -470,13 +470,13 @@ newtype_flag_names!(NAMES_GOFF_BINDING_SCOPE: BindingScope(u8) = {
     /// Unspecified
     GOFF_SCOPE_UNSPEC = 0x00,
     /// Section (local)
-    GOFF_SCOPE_SECTION = 0x10,
+    GOFF_SCOPE_SECTION = 0x01,
     /// Module (global)
-    GOFF_SCOPE_MODULE = 0x20,
+    GOFF_SCOPE_MODULE = 0x02,
     /// Library
-    GOFF_SCOPE_LIBRARY = 0x30,
+    GOFF_SCOPE_LIBRARY = 0x03,
     /// Import-Export
-    GOFF_SCOPE_IMPORT_EXPORT = 0x40,
+    GOFF_SCOPE_IMPORT_EXPORT = 0x04,
 });
 
 newtype!(
@@ -595,9 +595,9 @@ impl SectionFlags {
         (self.loading_and_scope & GOFF_INDIRECT) != 0
     }
 
-    /// Get binding scope
+    /// Get binding scope (IBM bits 5.4-7 = lower nibble)
     pub fn binding_scope(self) -> BindingScope {
-        BindingScope(self.loading_and_scope & 0xF0)
+        BindingScope(self.loading_and_scope & 0x0F)
     }
 
     /// Check if XPLINK linkage

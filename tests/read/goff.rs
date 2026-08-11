@@ -531,3 +531,56 @@ fn goff_foo_section_flags() {
     }
 }
 
+
+
+#[cfg(feature = "goff")]
+#[test]
+fn goff_foo_binding_scope() {
+    use ebcdic::ebcdic::Ebcdic;
+
+    // Helper function to convert EBCDIC symbol name to ASCII string
+    fn ebcdic_name_to_string(name_bytes: &[u8]) -> String {
+        let mut ascii_buf = vec![0u8; name_bytes.len()];
+        Ebcdic::ebcdic_to_ascii(name_bytes, &mut ascii_buf, name_bytes.len(), false, true);
+        String::from_utf8_lossy(&ascii_buf).trim_end_matches('\0').to_string()
+    }
+
+    let path_to_obj: PathBuf = ["testfiles", "goff", "foo.o"].iter().collect();
+    let contents = fs::read(&path_to_obj).expect("Could not read foo.o");
+    let file = read::goff::GoffFile::parse(&contents[..]).expect("Could not parse foo.o");
+
+    let symbol_records = file.symbol_records();
+
+    println!("\n=== Binding Scope Test for foo.o ===\n");
+    println!("Expected from foo.goffdump BA54 column:\n");
+    println!("ESDID 1: BA54=1 (Section)");
+    println!("ESDID 2: BA54=0 (Unspec)");
+    println!("ESDID 3: BA54=1 (Section)");
+    println!("ESDID 4: BA54=0 (Unspec)");
+    println!("ESDID 5: BA54=1 (Section)");
+    println!("ESDID 9: BA54=4 (Import-Export)\n");
+
+    // Check specific symbols
+    for esdid in [1, 2, 3, 4, 5, 9] {
+        if let Some(symbol) = symbol_records.get(&object::SymbolIndex(esdid)) {
+            let flags = symbol.behavioral_flags();
+            let name = ebcdic_name_to_string(symbol.name_bytes_owned());
+            let scope_raw = flags.loading_and_scope & 0xF0;
+            let scope_value = flags.binding_scope();
+            
+            println!("ESDID: 0x{:08X} | Name: {}", esdid, name);
+            println!("  Byte 5 (loading_and_scope): 0x{:02X}", flags.loading_and_scope);
+            println!("  Binding Scope (bits 4-7, mask 0xF0): 0x{:02X}", scope_raw);
+            println!("  binding_scope() returns: 0x{:02X}", scope_value.0);
+            println!("  Matches constant: {}", match scope_value {
+                object::goff::GOFF_SCOPE_UNSPEC => "UNSPEC (0x00)",
+                object::goff::GOFF_SCOPE_SECTION => "SECTION (0x10)",
+                object::goff::GOFF_SCOPE_MODULE => "MODULE (0x20)",
+                object::goff::GOFF_SCOPE_LIBRARY => "LIBRARY (0x30)",
+                object::goff::GOFF_SCOPE_IMPORT_EXPORT => "IMPORT_EXPORT (0x40)",
+                _ => "UNKNOWN",
+            });
+            println!();
+        }
+    }
+}
