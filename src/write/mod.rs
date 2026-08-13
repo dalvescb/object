@@ -171,6 +171,8 @@ impl<'a> Object<'a> {
             BinaryFormat::Coff => &[],
             #[cfg(feature = "elf")]
             BinaryFormat::Elf => &[],
+            #[cfg(feature = "goff")]
+            BinaryFormat::Goff => &[],
             #[cfg(feature = "macho")]
             BinaryFormat::MachO => self.macho_segment_name(segment),
             _ => unimplemented!(),
