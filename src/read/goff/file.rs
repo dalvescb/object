@@ -42,7 +42,7 @@ where
     pub(super) header: &'data goff::HeaderRecord64,
     pub(super) sections: Vec<SymbolIndex>,
     pub(super) segments: HashMap<SymbolIndex, GoffSegment<'data>>,
-    pub(super) symbols: HashMap<SymbolIndex, GoffSymbol>,
+    pub(super) symbols: Vec<GoffSymbol>,
     pub(super) relocations: Vec<GoffRelocation>,
     pub(super) record_count: Option<u32>,
     pub(super) entry_name: Vec<&'data [u8]>,
@@ -71,7 +71,7 @@ where
             header,
             sections: Vec::new(),
             segments: HashMap::new(),
-            symbols: HashMap::new(),
+            symbols: Vec::new(),
             relocations: Vec::new(),
             record_count: None,
             entry_name: Vec::new(),
@@ -167,7 +167,8 @@ where
             name_length: esd_record.name_length.get(BE),
         };
         // insert into symbol table (and section table if appropriate)
-        self.symbols.insert(symbolindex, goffsymbol);
+        // ESDIDs are 1-based and sequential; push ensures index == esdid - 1
+        self.symbols.push(goffsymbol);
         // Only ED (Element Definition) represents user sections
         // SD (Section Definition) is the compile unit, not a user section
         if esd_record.symbol_type == ESD_SYMTYPE_ED {
@@ -192,7 +193,7 @@ where
         // if esdid is a PR, get the parent ED
         let symbol = self
             .symbols
-            .get(&symbolindex)
+            .get(esdid as usize - 1)
             .ok_or(Error("txt record references undefined symbol"))?;
         let ed_symbolindex: SymbolIndex = match symbol.symbol_type() {
             ESD_SYMTYPE_ED => symbolindex,
@@ -236,7 +237,7 @@ where
             // insert new segment into segments map
             let ed_symbol = self
                 .symbols
-                .get(&ed_symbolindex)
+                .get(ed_symbolindex.0 - 1)
                 .ok_or(Error("ED symbol not found for segment"))?
                 .clone();
             let segment = GoffSegment {
@@ -469,14 +470,12 @@ where
             let esdid = item.esdid.get(BE);
             let length = item.length.get(BE);
 
-            // Update symbol in HashMap
-            let symbolindex = SymbolIndex(
-                usize::try_from(esdid).expect("Target architecture pointer size is too small"),
-            );
+            // Update symbol in Vec (ESDIDs are 1-based)
+            let idx = usize::try_from(esdid).expect("Target architecture pointer size is too small");
 
             let symbol = self
                 .symbols
-                .get_mut(&symbolindex)
+                .get_mut(idx - 1)
                 .ok_or(Error("LEN record references undefined symbol"))?;
 
             symbol.length = length;
@@ -493,7 +492,7 @@ where
     ///
     /// **Note:** This is primarily for internal use and testing. For the public API,
     /// use `symbol_table()` which filters out ED/SD symbols.
-    pub fn symbol_records(&self) -> &HashMap<SymbolIndex, GoffSymbol> {
+    pub fn symbol_records(&self) -> &Vec<GoffSymbol> {
         &self.symbols
     }
 }
@@ -665,7 +664,7 @@ where
 
     fn has_debug_symbols(&self) -> bool {
         // Check if any symbol name begins with the debug symbol prefix [0xC4, 0x6D] (i.e., the prefix D_ in EBCDIC)
-        self.symbols.values().any(|symbol| {
+        self.symbols.iter().any(|symbol| {
             let name = symbol.name_bytes_owned();
             name.len() >= 2 && name[0] == 0xC4 && name[1] == 0x6D
         })
