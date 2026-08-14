@@ -542,12 +542,6 @@ pub enum SegmentFlags {
         /// `Characteristics` field in the segment header.
         characteristics: crate::pe::SectionFlags,
     },
-    /// GOFF segment flags.
-    #[cfg(feature = "goff")]
-    GOFF {
-        /// `behavioral_attributes` serves as both the segment and section flags
-        behavioral_attributes: crate::goff::SectionFlags,
-    },
 }
 
 /// Memory permissions for a segment.
