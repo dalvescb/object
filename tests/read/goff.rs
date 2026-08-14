@@ -6,7 +6,6 @@ use std::path::PathBuf;
 #[test]
 fn goff_base_symbols() {
     use ebcdic::ebcdic::Ebcdic;
-    use object::SymbolIndex;
 
     // Helper function to convert EBCDIC symbol name to ASCII string
     fn ebcdic_name_to_string(name_bytes: &[u8]) -> String {
@@ -106,8 +105,7 @@ fn goff_base_symbols() {
         expected_name,
     ) in expected_symbols.iter()
     {
-        let symbol_index = SymbolIndex(*expected_esdid as usize);
-        let symbol = symbol_records.get(&symbol_index).expect(&format!(
+        let symbol = symbol_records.get(*expected_esdid as usize - 1).expect(&format!(
             "Failed to find symbol with ESDID 0x{:08X}",
             expected_esdid
         ));
@@ -170,7 +168,6 @@ fn goff_base_symbols() {
 #[test]
 fn goff_foo_symbols() {
     use ebcdic::ebcdic::Ebcdic;
-    use object::SymbolIndex;
 
     // Helper function to convert EBCDIC symbol name to ASCII string
     fn ebcdic_name_to_string(name_bytes: &[u8]) -> String {
@@ -243,8 +240,7 @@ fn goff_foo_symbols() {
         expected_name,
     ) in expected_symbols.iter()
     {
-        let symbol_index = SymbolIndex(*expected_esdid as usize);
-        let symbol = symbol_records.get(&symbol_index).expect(&format!(
+        let symbol = symbol_records.get(*expected_esdid as usize - 1).expect(&format!(
             "Failed to find symbol with ESDID 0x{:08X}",
             expected_esdid
         ));
@@ -306,7 +302,6 @@ fn goff_foo_symbols() {
 #[cfg(feature = "goff")]
 #[test]
 fn goff_foo_behavioral_attributes() {
-    use object::SymbolIndex;
     use object::goff::*;
 
     let path_to_obj: PathBuf = ["testfiles", "goff", "foo.o"].iter().collect();
@@ -321,7 +316,7 @@ fn goff_foo_behavioral_attributes() {
     // BA30=3 (RENT) is in byte[3]=0x60, bits 5-7 (IBM bit numbering 0-2)
     // BA54=1 (Section) is in byte[5]=0x01, bits 0-3 (IBM bit numbering 4-7)
     let symbol1 = symbol_records
-        .get(&SymbolIndex(0x00000001))
+        .get(0x00000001_usize - 1)
         .expect("Failed to find symbol with ESDID 0x00000001");
     let flags1 = symbol1.behavioral_flags();
     assert_eq!(
@@ -351,7 +346,7 @@ fn goff_foo_behavioral_attributes() {
     // Expected BA bytes: 00 04 01 00 00 40 04 00 00 00
     // BA10=04, BA24=1, BA50=1, BA62=0 (OS linkage), BA63=04
     let symbol2 = symbol_records
-        .get(&SymbolIndex(0x00000002))
+        .get(0x00000002_usize - 1)
         .expect("Failed to find symbol with ESDID 0x00000002");
     let flags2 = symbol2.behavioral_flags();
     assert_eq!(
@@ -384,7 +379,7 @@ fn goff_foo_behavioral_attributes() {
     // Expected BA bytes: 00 00 00 00 00 00 24 00 00 00
     // BA62=1 (XPLINK), BA63=04 (Quadword alignment)
     let symbol3 = symbol_records
-        .get(&SymbolIndex(0x00000003))
+        .get(0x00000003_usize - 1)
         .expect("Failed to find symbol with ESDID 0x00000003");
     let flags3 = symbol3.behavioral_flags();
     assert!(
@@ -401,7 +396,7 @@ fn goff_foo_behavioral_attributes() {
     // Expected BA bytes: 00 04 00 00 00 00 04 00 00 00
     // BA10=04 (RMODE 64), BA62=0 (OS linkage)
     let symbol4 = symbol_records
-        .get(&SymbolIndex(0x00000004))
+        .get(0x00000004_usize - 1)
         .expect("Failed to find symbol with ESDID 0x00000004");
     let flags4 = symbol4.behavioral_flags();
     assert_eq!(flags4.rmode(), GOFF_RMODE_64, "ESDID 4: RMODE should be 64");
@@ -414,7 +409,7 @@ fn goff_foo_behavioral_attributes() {
     // Expected BA bytes: 04 00 00 40 00 01 00 00 00 00
     // BA00=04, BA35=2, BA54=1, BA62=1 (XPLINK linkage)
     let symbol5 = symbol_records
-        .get(&SymbolIndex(0x00000005))
+        .get(0x00000005_usize - 1)
         .expect("Failed to find symbol with ESDID 0x00000005");
     let flags5 = symbol5.behavioral_flags();
     assert_eq!(flags5.amode(), GOFF_AMODE_64, "ESDID 5: AMODE should be 64");
@@ -447,7 +442,7 @@ fn goff_foo_behavioral_attributes() {
     // Expected BA bytes: 04 04 00 40 00 04 00 00 00 00
     // BA00=04, BA10=04, BA35=2, BA54=4
     let symbol9 = symbol_records
-        .get(&SymbolIndex(0x00000009))
+        .get(0x00000009_usize - 1)
         .expect("Failed to find symbol with ESDID 0x00000009");
     let flags9 = symbol9.behavioral_flags();
     assert_eq!(flags9.amode(), GOFF_AMODE_64, "ESDID 9: AMODE should be 64");
@@ -486,7 +481,7 @@ fn goff_foo_section_flags() {
     println!("\n=== Section Flags for foo.o ===\n");
 
     // Iterate through all symbols and print flags for section-type symbols
-    for (_index, symbol) in symbol_records.iter() {
+    for symbol in symbol_records.iter() {
         let symbol_type = symbol.symbol_type();
         
         // Only print for SD (0x00) and ED (0x01) types which represent sections
@@ -562,7 +557,7 @@ fn goff_foo_binding_scope() {
 
     // Check specific symbols
     for esdid in [1, 2, 3, 4, 5, 9] {
-        if let Some(symbol) = symbol_records.get(&object::SymbolIndex(esdid)) {
+        if let Some(symbol) = symbol_records.get(esdid - 1) {
             let flags = symbol.behavioral_flags();
             let name = ebcdic_name_to_string(symbol.name_bytes_owned());
             let scope_raw = flags.loading_and_scope & 0xF0;
