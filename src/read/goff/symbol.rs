@@ -5,13 +5,6 @@ use core::str;
 use crate::goff::*;
 use crate::goff::{ESD_SYMTYPE_ED, ESD_SYMTYPE_SD};
 
-#[cfg(not(feature = "std"))]
-#[allow(unused_imports)]
-use alloc::collections::BTreeMap as HashMap;
-#[cfg(feature = "std")]
-#[allow(unused_imports)]
-use std::collections::HashMap;
-
 use crate::read::{
     self, Error, ObjectSymbol, ObjectSymbolTable, ReadRef, Result, SectionIndex, SymbolFlags,
     SymbolIndex, SymbolKind, SymbolScope, SymbolSection,
@@ -354,7 +347,8 @@ where
     pub(super) fn iter_none(&self) -> GoffSymbolIterator<'data, 'file, R> {
         GoffSymbolIterator {
             file: self.file,
-            index: SymbolIndex(self.file.symbols.len()),
+            // ESDIDs are 1-based; index past the last valid ESDID to produce an empty iterator
+            index: SymbolIndex(self.file.symbols.len() + 1),
         }
     }
 
@@ -390,15 +384,10 @@ impl<'data, 'file, R: ReadRef<'data>> Iterator for GoffSymbolIterator<'data, 'fi
 
     fn next(&mut self) -> Option<Self::Item> {
         let SymbolIndex(index) = self.index;
-        if let Some(max_index) = self.file.symbols.keys().max() {
-            if self.index > *max_index {
-                return None;
-            }
-            let symbol = self.file.symbols.get(&self.index)?.clone();
-            self.index = SymbolIndex(index + 1);
-            return Some(symbol);
-        }
-        None
+        // ESDIDs are 1-based; Vec index is esdid - 1
+        let symbol = self.file.symbols.get(index - 1)?.clone();
+        self.index = SymbolIndex(index + 1);
+        Some(symbol)
     }
 }
 
@@ -421,10 +410,11 @@ impl<'data, 'file, R: ReadRef<'data>> ObjectSymbolTable<'data>
     }
 
     fn symbol_by_index(&self, index: SymbolIndex) -> Result<Self::Symbol> {
+        // ESDIDs are 1-based; Vec index is esdid - 1
         let symbol = self
             .file
             .symbols
-            .get(&index)
+            .get(index.0 - 1)
             .ok_or(Error("Symbol index out of bounds"))?;
 
         Ok(symbol.clone())

@@ -83,7 +83,11 @@ where
 impl<'data, 'file, R: ReadRef<'data>> GoffSection<'data, 'file, R> {
     /// Check if an ESDID is a descendant (child, grandchild, etc.) of a parent ESDID
     fn is_descendant_of(&self, esdid: &SymbolIndex, parent_esdid: &SymbolIndex) -> bool {
-        if let Some(symbol) = self.file.symbols.get(esdid) {
+        // ESDID 0 means "no parent"; guard against underflow and false positives
+        if esdid.0 == 0 {
+            return false;
+        }
+        if let Some(symbol) = self.file.symbols.get(esdid.0 - 1) {
             if symbol.parent_esdid == *parent_esdid {
                 return true;
             }
@@ -116,7 +120,7 @@ impl<'data, 'file, R: ReadRef<'data>> GoffSection<'data, 'file, R> {
         let symbol = self
             .file
             .symbols
-            .get(&self.esdid)
+            .get(self.esdid.0 - 1)
             .ok_or(Error("Invalid GOFF section ESDID"))?;
 
         let name = symbol.name_bytes_owned();
@@ -148,7 +152,7 @@ where
     fn size(&self) -> u64 {
         self.file
             .symbols
-            .get(&self.esdid)
+            .get(self.esdid.0 - 1)
             .map(|symbol| symbol.length as u64)
             .unwrap_or(0)
     }
@@ -156,7 +160,7 @@ where
     fn align(&self) -> u64 {
         self.file
             .symbols
-            .get(&self.esdid)
+            .get(self.esdid.0 - 1)
             .map(|symbol| {
                 // Extract alignment from byte 6 (index 5) bits 3-7 of behavioral attributes
                 let align_flags = goff::AlignmentFlags(symbol.behavioral_attributes[5] & 0xF8);
@@ -272,7 +276,7 @@ where
     fn flags(&self) -> SectionFlags {
         self.file
             .symbols
-            .get(&self.esdid)
+            .get(self.esdid.0 - 1)
             .map(|symbol| {
                 let attrs = &symbol.behavioral_attributes;
                 SectionFlags::Goff {
