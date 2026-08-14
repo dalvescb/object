@@ -193,7 +193,10 @@ where
     /// Get the symbol type for a given ESDID
     fn get_symbol_type(&self, esdid: u32) -> Option<SymbolType> {
         // ESDIDs are 1-based; Vec index is esdid - 1
-        self.file.symbols.get(esdid as usize - 1).map(|s| s.symbol_type)
+        self.file
+            .symbols
+            .get(esdid as usize - 1)
+            .map(|s| s.symbol_type)
     }
 
     /// Find the section index for a given ESDID

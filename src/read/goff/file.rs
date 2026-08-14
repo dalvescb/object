@@ -471,7 +471,8 @@ where
             let length = item.length.get(BE);
 
             // Update symbol in Vec (ESDIDs are 1-based)
-            let idx = usize::try_from(esdid).expect("Target architecture pointer size is too small");
+            let idx =
+                usize::try_from(esdid).expect("Target architecture pointer size is too small");
 
             let symbol = self
                 .symbols

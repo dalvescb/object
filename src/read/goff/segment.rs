@@ -2,8 +2,8 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::str;
 
-use crate::goff::*;
-use crate::read::{self, Error, ObjectSegment, ReadRef, Result};
+use crate::goff::TxtRecordStyle;
+use crate::read::{self, ObjectSegment, ReadRef, Result};
 use crate::{Permissions, SegmentFlags, SymbolIndex};
 
 use super::{GoffFile, GoffSymbol};
@@ -113,126 +113,50 @@ impl<'data, 'file, R: ReadRef<'data>> read::private::Sealed for GoffSegmentRef<'
 
 impl<'data, 'file, R: ReadRef<'data>> ObjectSegment<'data> for GoffSegmentRef<'data, 'file, R> {
     fn address(&self) -> u64 {
-        let segment = self.segment();
-        // Find the first text reference with the lowest offset
-        let first_text_ref = match segment.text_refs.iter().min_by_key(|tr| tr.offset) {
-            Some(tr) => tr,
-            None => return 0,
-        };
-
-        let mut address = first_text_ref.offset as u64;
-
-        // If the text record is in a PR (Part Reference), add the PR's offset
-        // The segment's esdid is the ED, so if text_ref.esdid != segment.symbol.esdid,
-        // then the text is in a PR and we need to add the PR's offset
-        if first_text_ref.esdid != SymbolIndex(segment.symbol.esdid() as usize) {
-            // The text reference is from a PR, add the PR's offset to get absolute address
-            address += segment.symbol.offset as u64;
-        }
-
-        address
+        unreachable!()
     }
 
     fn size(&self) -> u64 {
-        let segment = self.segment();
-        segment
-            .text_refs
-            .iter()
-            .map(|text_ref| text_ref.data_length as u64)
-            .sum()
+        unreachable!()
     }
 
     fn align(&self) -> u64 {
-        let segment = self.segment();
-        // Use the behavioral_flags method to get SectionFlags, then extract alignment
-        let flags = segment.symbol.behavioral_flags();
-        match flags.alignment() {
-            GOFF_ALIGN_BYTE => 1,
-            GOFF_ALIGN_HALFWORD => 2,
-            GOFF_ALIGN_FULLWORD => 4,
-            GOFF_ALIGN_DOUBLEWORD => 8,
-            GOFF_ALIGN_QUADWORD => 16,
-            GOFF_ALIGN_32BYTE => 32,
-            GOFF_ALIGN_64BYTE => 64,
-            GOFF_ALIGN_128BYTE => 128,
-            GOFF_ALIGN_256BYTE => 256,
-            GOFF_ALIGN_512BYTE => 512,
-            GOFF_ALIGN_1024BYTE => 1024,
-            GOFF_ALIGN_2KB => 2048,
-            GOFF_ALIGN_4KB => 4096,
-            _ => 1, // Default to byte alignment
-        }
+        unreachable!()
     }
 
     fn file_range(&self) -> (u64, u64) {
-        let segment = self.segment();
-        let start = self.address();
-
-        // Find the text reference with the largest offset
-        let last_text_ref = match segment.text_refs.iter().max_by_key(|tr| tr.offset) {
-            Some(tr) => tr,
-            None => return (start, start),
-        };
-
-        // Calculate end as: largest offset + its data length
-        let end = start + last_text_ref.offset as u64 + last_text_ref.data_length as u64;
-
-        (start, end)
+        unreachable!()
     }
 
     fn data(&self) -> Result<&'data [u8]> {
-        Err(Error(
-            "GOFF segment data is non-contiguous, use GoffSection::uncompressed_data() instead",
-        ))
+        unreachable!()
     }
 
     fn data_range(&self, _address: u64, _size: u64) -> Result<Option<&'data [u8]>> {
-        Err(Error(
-            "GOFF segment data is non-contiguous, and should not be index by a given range",
-        ))
+        unreachable!()
     }
 
     fn name_bytes(&self) -> Result<Option<&[u8]>> {
-        Err(Error("GOFF segments are not named"))
+        unreachable!()
     }
 
     fn name(&self) -> Result<Option<&str>> {
-        Err(Error("GOFF segments are not named"))
+        unreachable!()
     }
 
     fn flags(&self) -> SegmentFlags {
-        let segment = self.segment();
-        SegmentFlags::GOFF {
-            behavioral_attributes: segment.symbol.behavioral_flags(),
-        }
+        unreachable!()
     }
 
     fn permissions(&self) -> Permissions {
-        let segment = self.segment();
-        let flags = segment.symbol.behavioral_flags();
-
-        // Read: GOFF doesn't have a no-read flag, so always readable
-        let read = true;
-
-        // Write: writable if NOT read-only
-        let write = !flags.is_read_only();
-
-        // Execute: executable if marked as code
-        let execute = flags.executable() == GOFF_EXEC_CODE;
-
-        Permissions::new(read, write, execute)
+        unreachable!()
     }
 }
 
 /// A reference to a segment in a [`GoffFile`].
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct GoffSegmentRef<'data, 'file, R: ReadRef<'data>> {
     pub(super) file: &'file GoffFile<'data, R>,
     pub(super) index: SymbolIndex,
-}
-
-impl<'data, 'file, R: ReadRef<'data>> GoffSegmentRef<'data, 'file, R> {
-    fn segment(&self) -> &'file GoffSegment<'data> {
-        &self.file.segments[&self.index]
-    }
 }
