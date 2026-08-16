@@ -131,12 +131,11 @@ where
         );
 
         // parse continuations if any (provides name data)
-        let cont_data: Vec<&'data [u8]>;
-        if is_continued {
-            cont_data = self.parse_continuations(offset)?;
+        let cont_data: Vec<&'data [u8]> = if is_continued {
+            self.parse_continuations(offset)?
         } else {
-            cont_data = Vec::new();
-        }
+            Vec::new()
+        };
 
         // Flatten name from the ESD record and any continuation records into a single Vec<u8>
         let name_length: usize = esd_record.name_length.get(BE).into();
@@ -150,7 +149,7 @@ where
 
         let goffsymbol = GoffSymbol {
             symbol_index: symbolindex,
-            esdid: esdid,
+            esdid,
             name: esd_name_data,
             symbol_type: esd_record.symbol_type,
             parent_esdid: parent_symbolindex,
@@ -201,12 +200,11 @@ where
         };
 
         // Parse continuations if any
-        let cont_data: Vec<&'data [u8]>;
-        if is_continued {
-            cont_data = self.parse_continuations(offset)?;
+        let cont_data: Vec<&'data [u8]> = if is_continued {
+            self.parse_continuations(offset)?
         } else {
-            cont_data = Vec::new();
-        }
+            Vec::new()
+        };
 
         // Create text reference
         let data_length = usize::from(txt_record.data_length.get(BE));
@@ -685,7 +683,7 @@ where
     fn flags(&self) -> FileFlags {
         FileFlags::Goff {
             archlvl: self.header.archlvl(),
-            flags: self.entry_flags.map(|f| goff::FileFlags(f)),
+            flags: self.entry_flags.map(goff::FileFlags),
             amode: self.entry_amode,
         }
     }

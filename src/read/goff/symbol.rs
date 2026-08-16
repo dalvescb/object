@@ -150,7 +150,7 @@ impl GoffSymbol {
     }
 }
 
-impl<'data> read::private::Sealed for GoffSymbol {}
+impl read::private::Sealed for GoffSymbol {}
 
 impl<'data> ObjectSymbol<'data> for GoffSymbol {
     #[inline]

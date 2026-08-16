@@ -38,18 +38,14 @@ where
     type Item = GoffSection<'data, 'file, R>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next_item = self.iter.next();
-        if next_item.is_none() {
-            None
-        } else {
-            let current_index = self.index;
-            self.index += 1;
-            Some(GoffSection {
-                esdid: *next_item.unwrap(),
-                file: self.file,
-                index: SectionIndex(current_index),
-            })
-        }
+        let next_item = self.iter.next()?;
+        let current_index = self.index;
+        self.index += 1;
+        Some(GoffSection {
+            esdid: *next_item,
+            file: self.file,
+            index: SectionIndex(current_index),
+        })
     }
 }
 

@@ -245,7 +245,7 @@ fn goff_relocation_absolute() {
 
     // Verify RLD record exists
     assert!(
-        buffer.windows(3).any(|w| w == &[0x03, 0x20, 0x00]),
+        buffer.windows(3).any(|w| w == [0x03, 0x20, 0x00]),
         "RLD record not found in output"
     );
 

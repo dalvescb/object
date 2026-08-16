@@ -331,11 +331,11 @@ impl<'a> Writer<'a> {
             .build();
         er.behavioral_attributes = attrs;
 
-        return self.write_esd_record(&er, symbol_name);
+        self.write_esd_record(&er, symbol_name)
     }
 
     pub fn write_er_to_data(&mut self, symbol_name: &[u8]) -> u32 {
-        return self.write_wsa_symbol(symbol_name, 0);
+        self.write_wsa_symbol(symbol_name, 0)
     }
 
     pub fn write_wsa_symbol(&mut self, symbol_name: &[u8], symbol_length: u32) -> u32 {
@@ -360,7 +360,7 @@ impl<'a> Writer<'a> {
             .with_alignment(goff::GOFF_ALIGN_HALFWORD)
             .build();
 
-        return self.write_pr(symbol_name, ed_esdid, symbol_length, pr_attrs);
+        self.write_pr(symbol_name, ed_esdid, symbol_length, pr_attrs)
     }
 
     pub fn write_debug_section_symbol(&mut self, section_name: &[u8], section_length: u32) -> u32 {
@@ -378,7 +378,7 @@ impl<'a> Writer<'a> {
             .build();
         ed.behavioral_attributes = attrs;
 
-        return self.write_esd_record(&ed, section_name);
+        self.write_esd_record(&ed, section_name)
     }
 
     /// Write an SD (Section Definition) record.
@@ -577,9 +577,9 @@ impl<'a> Writer<'a> {
         namespace_id: goff::EsdNameSpace,
         parent_esdid: u32,
     ) -> goff::SymbolRecord64 {
-        return goff::SymbolRecord64 {
+        goff::SymbolRecord64 {
             ptv: goff::GOFF_ESD_BYTES,
-            symbol_type: symbol_type,
+            symbol_type,
             esdid: U32::new(BE, self.next_esdid),
             parent_esdid: U32::new(BE, parent_esdid),
             reserved1: U32::new(BE, 0),
@@ -589,7 +589,7 @@ impl<'a> Writer<'a> {
             ea_esdid: U32::new(BE, 0),
             ea_data_offset: U32::new(BE, 0),
             reserved3: U32::new(BE, 0),
-            namespace_id: namespace_id,
+            namespace_id,
             sym_flags: 0,
             fill_byte_value: 0,
             reserved4: 0,
@@ -599,7 +599,7 @@ impl<'a> Writer<'a> {
             behavioral_attributes: [0u8; 10],
             name_length: U16::new(BE, 0),
             name: [0u8; goff::SIZEOF_ESD_DATA],
-        };
+        }
     }
 
     pub fn write_esd_record(&mut self, record: &goff::SymbolRecord64, name: &[u8]) -> u32 {
@@ -618,9 +618,9 @@ impl<'a> Writer<'a> {
 
         self.logical_record_count += 1;
         self.buffer.write_pod(&esd_record);
-        self.write_continuation_records(goff::GOFF_ESD_BYTES, &name, name.len() - record_name_len);
+        self.write_continuation_records(goff::GOFF_ESD_BYTES, name, name.len() - record_name_len);
 
-        return self.next_esdid - 1;
+        self.next_esdid - 1
     }
 
     pub fn write_continuation_records(
@@ -641,7 +641,7 @@ impl<'a> Writer<'a> {
             }
 
             let mut cont_record = goff::ContinuationRecord64 {
-                ptv: ptv,
+                ptv,
                 data: [0u8; goff::SIZEOF_CONTINUATION_RECORD_DATA],
             };
             let record_data_amount = end - start;
@@ -661,7 +661,7 @@ impl<'a> Writer<'a> {
         let max_logical_length = 32 * 1024 - 1;
 
         let mut data_remaining_amount = data.len();
-        let mut offset = 0 as usize;
+        let mut offset = 0_usize;
         while data_remaining_amount > 0 {
             let logical_write_len = if data_remaining_amount > max_logical_length {
                 max_logical_length
@@ -676,7 +676,7 @@ impl<'a> Writer<'a> {
             }
 
             let mut record = goff::TextRecord64 {
-                ptv: ptv,
+                ptv,
                 record_style: goff::TxtRecordStyle(record_style),
                 element_esdid: U32::new(BE, esdid),
                 reserved1: U32::new(BE, 0),
