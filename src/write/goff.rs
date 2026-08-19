@@ -899,31 +899,32 @@ impl<'a> Writer<'a> {
 
     /// Write RLD records from a data buffer.
     fn write_rld_records(&mut self, data: &[u8]) -> Result<()> {
-        let mut offset = 0;
+        if data.is_empty() {
+            return Ok(());
+        }
 
-        while offset < data.len() {
-            let chunk_size = (data.len() - offset).min(goff::SIZEOF_RELOCATION_DATA);
-            let needs_continuation =
-                chunk_size == goff::SIZEOF_RELOCATION_DATA && offset + chunk_size < data.len();
+        let first_chunk = data.len().min(goff::SIZEOF_RELOCATION_DATA);
+        let remainder = &data[first_chunk..];
 
-            let mut ptv = goff::GOFF_RLD_BYTES;
-            if needs_continuation {
-                ptv[1] |= 0x01; // Set continuation flag
-            }
+        let mut ptv = goff::GOFF_RLD_BYTES;
+        if !remainder.is_empty() {
+            ptv[1] |= 0x01; // Set "is_continued" flag — overflow goes into ContinuationRecord64s
+        }
 
-            let mut record = goff::RelocationRecord64 {
-                ptv,
-                reserved: 0,
-                length: U16::new(BE, chunk_size as u16),
-                data: [0u8; goff::SIZEOF_RELOCATION_DATA],
-            };
+        let mut record = goff::RelocationRecord64 {
+            ptv,
+            reserved: 0,
+            // Length covers the total data across this record and all its continuations.
+            length: U16::new(BE, data.len() as u16),
+            data: [0u8; goff::SIZEOF_RELOCATION_DATA],
+        };
+        record.data[..first_chunk].copy_from_slice(&data[..first_chunk]);
 
-            record.data[..chunk_size].copy_from_slice(&data[offset..offset + chunk_size]);
+        self.logical_record_count += 1;
+        self.buffer.write_pod(&record);
 
-            self.logical_record_count += 1;
-            self.buffer.write_pod(&record);
-
-            offset += chunk_size;
+        if !remainder.is_empty() {
+            self.write_continuation_records(goff::GOFF_RLD_BYTES, data, remainder.len());
         }
 
         Ok(())

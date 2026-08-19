@@ -20,6 +20,9 @@ const EXTERNAL_FUNC_EBCDIC: &[u8] = &[
 ]; // "external_func"
 const FUNC1_EBCDIC: &[u8] = &[0x86, 0xA4, 0x95, 0x83, 0xF1]; // "func1"
 const FUNC2_EBCDIC: &[u8] = &[0x86, 0xA4, 0x95, 0x83, 0xF2, 0x6D, 0x85, 0xA7, 0xA3]; // "func2_ext" (9 bytes, requires continuation record)
+const FUNC3_EBCDIC: &[u8] = &[0x86, 0xA4, 0x95, 0x83, 0xF3]; // "func3"
+const FUNC4_EBCDIC: &[u8] = &[0x86, 0xA4, 0x95, 0x83, 0xF4]; // "func4"
+const FUNC5_EBCDIC: &[u8] = &[0x86, 0xA4, 0x95, 0x83, 0xF5]; // "func5"
 const EXTERNAL_EBCDIC: &[u8] = &[0x85, 0xA7, 0xA3, 0x85, 0x99, 0x95, 0x81, 0x93]; // "external"
 
 /// Test basic GOFF file structure with external references
@@ -409,6 +412,89 @@ fn goff_relocation_compression() {
     assert_eq!(relocations.len(), 4, "Expected 4 relocations");
 
     // Verify offsets are correct
+    for (i, (offset, _)) in relocations.iter().enumerate() {
+        assert_eq!(*offset, (i * 8) as u64, "Relocation {} offset mismatch", i);
+    }
+}
+
+// 5 uncompressed-R relocations produce rld_data = 20 + 4×16 = 84 bytes, which exceeds
+// SIZEOF_RELOCATION_DATA (74) and forces write_rld_records to emit the first RLD record
+// with the "is_continued" bit set (ptv byte 1 = RT_RLD | 0x01 = 0x21), followed by a
+// continuation record carrying the remaining 10 bytes. The reader's parse_relocations
+// then calls parse_continuations to reassemble the full item stream.
+#[test]
+fn goff_relocation_rld_continuation() {
+    let mut object = write::Object::new(BinaryFormat::Goff, Architecture::S390x, Endianness::Big);
+
+    // Section large enough for all five 8-byte-spaced relocation targets
+    let code_section = object.add_section(vec![], C_CODE_EBCDIC.to_vec(), SectionKind::Text);
+    object
+        .section_mut(code_section)
+        .set_data(vec![0x00; 64], 8);
+
+    // Five distinct symbols → five distinct R-pointers → no R-pointer compression.
+    // Each relocation item is fully uncompressed except for the P-pointer (same section
+    // throughout), so sizes are: item 1 = 20 bytes, items 2-5 = 16 bytes each → 84 total.
+    let sym_names: &[&[u8]] = &[
+        FUNC1_EBCDIC,
+        FUNC2_EBCDIC,
+        FUNC3_EBCDIC,
+        FUNC4_EBCDIC,
+        FUNC5_EBCDIC,
+    ];
+    let syms: Vec<_> = sym_names
+        .iter()
+        .map(|name| {
+            object.add_symbol(write::Symbol {
+                name: name.to_vec(),
+                value: 0,
+                size: 0,
+                kind: SymbolKind::Text,
+                scope: SymbolScope::Dynamic,
+                weak: false,
+                section: write::SymbolSection::Undefined,
+                flags: SymbolFlags::None,
+            })
+        })
+        .collect();
+
+    for (i, sym) in syms.iter().enumerate() {
+        object
+            .add_relocation(
+                code_section,
+                write::Relocation {
+                    offset: (i * 8) as u64,
+                    symbol: *sym,
+                    addend: 0,
+                    flags: RelocationFlags::Generic {
+                        kind: RelocationKind::Absolute,
+                        encoding: RelocationEncoding::Generic,
+                        size: 32,
+                    },
+                },
+            )
+            .unwrap();
+    }
+
+    let mut buffer = Vec::new();
+    object.write_stream(&mut buffer).unwrap();
+
+    // The first RLD record must carry the "is_continued" bit:
+    //   byte 0: 0x03 (GOFF prefix)
+    //   byte 1: 0x21 (RT_RLD=0x20 | continued=0x01)
+    //   byte 2: 0x00 (version)
+    assert!(
+        buffer.windows(3).any(|w| w == [0x03, 0x21, 0x00]),
+        "Expected an RLD record with the continuation bit set (0x03 0x21 0x00)"
+    );
+
+    // Round-trip: all five relocations must survive the continuation read path.
+    let parsed = object::File::parse(&*buffer).unwrap();
+    let section = parsed.sections().next().unwrap();
+    let mut relocations: Vec<_> = section.relocations().collect();
+    relocations.sort_by_key(|(offset, _)| *offset);
+
+    assert_eq!(relocations.len(), 5, "Expected 5 relocations across continuation records");
     for (i, (offset, _)) in relocations.iter().enumerate() {
         assert_eq!(*offset, (i * 8) as u64, "Relocation {} offset mismatch", i);
     }
