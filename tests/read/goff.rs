@@ -132,10 +132,12 @@ fn goff_base_symbols() {
         expected_name,
     ) in expected_symbols.iter()
     {
-        let symbol = symbol_records.get(*expected_esdid as usize - 1).expect(&format!(
-            "Failed to find symbol with ESDID 0x{:08X}",
-            expected_esdid
-        ));
+        let symbol = symbol_records
+            .get(*expected_esdid as usize - 1)
+            .expect(&format!(
+                "Failed to find symbol with ESDID 0x{:08X}",
+                expected_esdid
+            ));
 
         // Check ESDID using public getter
         assert_eq!(
@@ -258,10 +260,12 @@ fn goff_foo_symbols() {
         expected_name,
     ) in expected_symbols.iter()
     {
-        let symbol = symbol_records.get(*expected_esdid as usize - 1).expect(&format!(
-            "Failed to find symbol with ESDID 0x{:08X}",
-            expected_esdid
-        ));
+        let symbol = symbol_records
+            .get(*expected_esdid as usize - 1)
+            .expect(&format!(
+                "Failed to find symbol with ESDID 0x{:08X}",
+                expected_esdid
+            ));
 
         // Check ESDID using public getter
         assert_eq!(
@@ -498,38 +502,51 @@ fn goff_foo_section_flags() {
             let flags = symbol.behavioral_flags();
             let name = ebcdic_to_ascii(symbol.name_bytes_owned());
 
-            println!("ESDID: 0x{:08X} | Type: 0x{:02X} | Name: {}", 
-                     symbol.esdid(), symbol_type.0, name);
-            println!("  AMODE: 0x{:02X} ({})", flags.amode.0,
-                     match flags.amode() {
-                         object::goff::GOFF_AMODE_24 => "24-bit",
-                         object::goff::GOFF_AMODE_31 => "31-bit",
-                         object::goff::GOFF_AMODE_64 => "64-bit",
-                         object::goff::GOFF_AMODE_ANY => "Any",
-                         _ => "Unspecified",
-                     });
-            println!("  RMODE: 0x{:02X} ({})", flags.rmode.0,
-                     match flags.rmode() {
-                         object::goff::GOFF_RMODE_24 => "24-bit",
-                         object::goff::GOFF_RMODE_31 => "31-bit",
-                         object::goff::GOFF_RMODE_64 => "64-bit",
-                         _ => "Unspecified",
-                     });
+            println!(
+                "ESDID: 0x{:08X} | Type: 0x{:02X} | Name: {}",
+                symbol.esdid(),
+                symbol_type.0,
+                name
+            );
+            println!(
+                "  AMODE: 0x{:02X} ({})",
+                flags.amode.0,
+                match flags.amode() {
+                    object::goff::GOFF_AMODE_24 => "24-bit",
+                    object::goff::GOFF_AMODE_31 => "31-bit",
+                    object::goff::GOFF_AMODE_64 => "64-bit",
+                    object::goff::GOFF_AMODE_ANY => "Any",
+                    _ => "Unspecified",
+                }
+            );
+            println!(
+                "  RMODE: 0x{:02X} ({})",
+                flags.rmode.0,
+                match flags.rmode() {
+                    object::goff::GOFF_RMODE_24 => "24-bit",
+                    object::goff::GOFF_RMODE_31 => "31-bit",
+                    object::goff::GOFF_RMODE_64 => "64-bit",
+                    _ => "Unspecified",
+                }
+            );
             println!("  Text/Binding: 0x{:02X}", flags.text_and_binding);
             println!("  Tasking/Exec: 0x{:02X}", flags.tasking_and_exec);
             println!("  Dup/Strength: 0x{:02X}", flags.dup_and_strength);
             println!("  Loading/Scope: 0x{:02X}", flags.loading_and_scope);
             println!("  Linkage/Align: 0x{:02X}", flags.linkage_and_align);
             println!("  XPLINK: {}", flags.is_xplink());
-            println!("  Binding Scope: 0x{:02X} ({})", flags.binding_scope(),
-                     match flags.binding_scope() {
-                         object::goff::GOFF_SCOPE_UNSPEC => "Unspecified",
-                         object::goff::GOFF_SCOPE_SECTION => "Section",
-                         object::goff::GOFF_SCOPE_MODULE => "Module",
-                         object::goff::GOFF_SCOPE_LIBRARY => "Library",
-                         object::goff::GOFF_SCOPE_IMPORT_EXPORT => "Import/Export",
-                         _ => "Unknown",
-                     });
+            println!(
+                "  Binding Scope: 0x{:02X} ({})",
+                flags.binding_scope(),
+                match flags.binding_scope() {
+                    object::goff::GOFF_SCOPE_UNSPEC => "Unspecified",
+                    object::goff::GOFF_SCOPE_SECTION => "Section",
+                    object::goff::GOFF_SCOPE_MODULE => "Module",
+                    object::goff::GOFF_SCOPE_LIBRARY => "Library",
+                    object::goff::GOFF_SCOPE_IMPORT_EXPORT => "Import/Export",
+                    _ => "Unknown",
+                }
+            );
             println!();
         }
     }
@@ -562,17 +579,23 @@ fn goff_foo_binding_scope() {
             let scope_value = flags.binding_scope();
 
             println!("ESDID: 0x{:08X} | Name: {}", esdid, name);
-            println!("  Byte 5 (loading_and_scope): 0x{:02X}", flags.loading_and_scope);
+            println!(
+                "  Byte 5 (loading_and_scope): 0x{:02X}",
+                flags.loading_and_scope
+            );
             println!("  Binding Scope (bits 4-7, mask 0xF0): 0x{:02X}", scope_raw);
             println!("  binding_scope() returns: 0x{:02X}", scope_value.0);
-            println!("  Matches constant: {}", match scope_value {
-                object::goff::GOFF_SCOPE_UNSPEC => "UNSPEC (0x00)",
-                object::goff::GOFF_SCOPE_SECTION => "SECTION (0x10)",
-                object::goff::GOFF_SCOPE_MODULE => "MODULE (0x20)",
-                object::goff::GOFF_SCOPE_LIBRARY => "LIBRARY (0x30)",
-                object::goff::GOFF_SCOPE_IMPORT_EXPORT => "IMPORT_EXPORT (0x40)",
-                _ => "UNKNOWN",
-            });
+            println!(
+                "  Matches constant: {}",
+                match scope_value {
+                    object::goff::GOFF_SCOPE_UNSPEC => "UNSPEC (0x00)",
+                    object::goff::GOFF_SCOPE_SECTION => "SECTION (0x10)",
+                    object::goff::GOFF_SCOPE_MODULE => "MODULE (0x20)",
+                    object::goff::GOFF_SCOPE_LIBRARY => "LIBRARY (0x30)",
+                    object::goff::GOFF_SCOPE_IMPORT_EXPORT => "IMPORT_EXPORT (0x40)",
+                    _ => "UNKNOWN",
+                }
+            );
             println!();
         }
     }

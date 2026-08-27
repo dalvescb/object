@@ -428,9 +428,7 @@ fn goff_relocation_rld_continuation() {
 
     // Section large enough for all five 8-byte-spaced relocation targets
     let code_section = object.add_section(vec![], C_CODE_EBCDIC.to_vec(), SectionKind::Text);
-    object
-        .section_mut(code_section)
-        .set_data(vec![0x00; 64], 8);
+    object.section_mut(code_section).set_data(vec![0x00; 64], 8);
 
     // Five distinct symbols → five distinct R-pointers → no R-pointer compression.
     // Each relocation item is fully uncompressed except for the P-pointer (same section
@@ -494,7 +492,11 @@ fn goff_relocation_rld_continuation() {
     let mut relocations: Vec<_> = section.relocations().collect();
     relocations.sort_by_key(|(offset, _)| *offset);
 
-    assert_eq!(relocations.len(), 5, "Expected 5 relocations across continuation records");
+    assert_eq!(
+        relocations.len(),
+        5,
+        "Expected 5 relocations across continuation records"
+    );
     for (i, (offset, _)) in relocations.iter().enumerate() {
         assert_eq!(*offset, (i * 8) as u64, "Relocation {} offset mismatch", i);
     }
