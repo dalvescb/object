@@ -323,11 +323,18 @@ impl<'a> Writer<'a> {
             self.cu_esdid,
         );
 
-        // External reference to code: executable, export scope
+        // External reference to code.
+        // Behavioral attributes must be compatible with the LD definitions emitted by
+        // the LLVM z/OS backend:
+        //   byte[1] RMODE = UNSPEC (0x00)  — not RMODE_64; sysroot LDs carry 0x00
+        //   byte[3] exec  = UNSPEC (0x00)  — not EXEC_CODE; the ER does not assert
+        //                                    the symbol's nature, only references it
+        //   byte[6] align = QUADWORD(0x20) — sysroot LDs use 0x20, not 32-byte(0x28)
+        // Mismatches in these fields cause IEW2456E from the z/OS binder.
         let attrs = BehavioralAttributesBuilder::new()
-            .with_executable(goff::GOFF_EXEC_CODE)
+            .with_rmode(goff::GOFF_RMODE_UNSPEC)
             .with_binding_scope(goff::GOFF_SCOPE_IMPORT_EXPORT)
-            .with_alignment(goff::GOFF_ALIGN_32BYTE)
+            .with_alignment(goff::GOFF_ALIGN_QUADWORD)
             .build();
         er.behavioral_attributes = attrs;
 
@@ -1090,6 +1097,12 @@ impl BehavioralAttributesBuilder {
     /// Set the binding scope.
     pub fn with_binding_scope(mut self, scope: goff::BindingScope) -> Self {
         self.binding_scope = scope;
+        self
+    }
+
+    /// Set the RMODE (residence mode).
+    pub fn with_rmode(mut self, rmode: goff::RmodeFlags) -> Self {
+        self.rmode = rmode;
         self
     }
 
