@@ -324,14 +324,13 @@ impl<'a> Writer<'a> {
         );
 
         // External reference to code.
-        // Behavioral attributes must be compatible with the LD definitions emitted by
-        // the LLVM z/OS backend to avoid IEW2456E from the z/OS binder:
-        //   byte[1] RMODE = UNSPEC (0x00)  — sysroot LDs carry 0x00, not RMODE_64
-        //   byte[3] exec  = Code   (0x40)  — must match the Code Executable flag of the LD
-        //   byte[6] align = QUADWORD(0x20) — sysroot LDs use 0x20, not 32-byte (0x28)
+        // Behavioral attributes must match sysroot ERs emitted by the LLVM z/OS backend
+        // to avoid IEW2456E from the z/OS binder. Sysroot ERs carry:
+        //   byte[1] RMODE    = UNSPEC (0x00)  — not RMODE_64
+        //   byte[3] exec     = UNSPEC (0x00)  — ERs do NOT set Executable; only LDs do
+        //   byte[6] align    = QUADWORD(0x20) — sysroot ERs use 0x20, not 32-byte (0x28)
         let attrs = BehavioralAttributesBuilder::new()
             .with_rmode(goff::GOFF_RMODE_UNSPEC)
-            .with_executable(goff::GOFF_EXEC_CODE)
             .with_binding_scope(goff::GOFF_SCOPE_IMPORT_EXPORT)
             .with_alignment(goff::GOFF_ALIGN_QUADWORD)
             .build();
@@ -362,16 +361,16 @@ impl<'a> Writer<'a> {
         // Behavioral attributes must match sysroot WSA data PRs emitted by the LLVM z/OS backend:
         //   byte[0] AMODE  = UNSPEC (0x00)
         //   byte[1] RMODE  = UNSPEC (0x00)
-        //   byte[3]        = Tasking=None(0x01), Exec=Unspec — NOT EXEC_DATA, NOT WEAK
-        //   byte[4]        = Strong (0x00)
+        //   byte[3]        = Exec=Data(0x01) via GOFF_TASK_NON_REUS constant (bit layout quirk)
+        //   byte[4]        = Strong (0x00) — NOT WEAK; sysroot PRs use strong binding
+        //   byte[5]        = Section scope (0x01) — sysroot PRs use Section, not Export
         //   byte[6]        = XPLINK(0x04) | QUADWORD(0x20) = 0x24
         // Mismatches cause IEW2456E from the z/OS binder.
         let pr_attrs = BehavioralAttributesBuilder::new()
             .with_amode(goff::GOFF_AMODE_UNSPEC)
             .with_rmode(goff::GOFF_RMODE_UNSPEC)
             .with_tasking(goff::GOFF_TASK_NON_REUS)
-            .with_binding_strength(goff::GOFF_BIND_WEAK)
-            .with_binding_scope(goff::GOFF_SCOPE_IMPORT_EXPORT)
+            .with_binding_scope(goff::GOFF_SCOPE_SECTION)
             .with_linkage_xplink(true)
             .with_alignment(goff::GOFF_ALIGN_QUADWORD)
             .build();
