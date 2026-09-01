@@ -360,11 +360,21 @@ impl<'a> Writer<'a> {
         let ed_esdid = self.write_esd_record(&ed, EBCDIC_C_WSA64);
 
         // Emit PR child symbol using write_pr method.
+        // Behavioral attributes must match sysroot WSA data PRs emitted by the LLVM z/OS backend:
+        //   byte[0] AMODE  = UNSPEC (0x00)
+        //   byte[1] RMODE  = UNSPEC (0x00)
+        //   byte[3]        = Tasking=None(0x01), Exec=Unspec — NOT EXEC_DATA, NOT WEAK
+        //   byte[4]        = Strong (0x00)
+        //   byte[6]        = XPLINK(0x04) | QUADWORD(0x20) = 0x24
+        // Mismatches cause IEW2456E from the z/OS binder.
         let pr_attrs = BehavioralAttributesBuilder::new()
-            .with_executable(goff::GOFF_EXEC_DATA)
+            .with_amode(goff::GOFF_AMODE_UNSPEC)
+            .with_rmode(goff::GOFF_RMODE_UNSPEC)
+            .with_tasking(goff::GOFF_TASK_NON_REUS)
             .with_binding_strength(goff::GOFF_BIND_WEAK)
             .with_binding_scope(goff::GOFF_SCOPE_IMPORT_EXPORT)
-            .with_alignment(goff::GOFF_ALIGN_HALFWORD)
+            .with_linkage_xplink(true)
+            .with_alignment(goff::GOFF_ALIGN_QUADWORD)
             .build();
 
         return self.write_pr(symbol_name, ed_esdid, symbol_length, pr_attrs);
@@ -1100,9 +1110,27 @@ impl BehavioralAttributesBuilder {
         self
     }
 
+    /// Set the AMODE (addressing mode).
+    pub fn with_amode(mut self, amode: goff::AmodeFlags) -> Self {
+        self.amode = amode;
+        self
+    }
+
     /// Set the RMODE (residence mode).
     pub fn with_rmode(mut self, rmode: goff::RmodeFlags) -> Self {
         self.rmode = rmode;
+        self
+    }
+
+    /// Set the tasking behavior.
+    pub fn with_tasking(mut self, tasking: goff::TaskingBehavior) -> Self {
+        self.tasking = tasking;
+        self
+    }
+
+    /// Set the XPLINK linkage flag.
+    pub fn with_linkage_xplink(mut self, xplink: bool) -> Self {
+        self.linkage_xplink = xplink;
         self
     }
 
