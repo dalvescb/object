@@ -430,9 +430,9 @@ newtype_flag_names!(NAMES_GOFF_EXECUTABLE: ExecutableFlags(u8) = {
     /// Not specified
     GOFF_EXEC_UNSPEC = 0x00,
     /// Not executable (data)
-    GOFF_EXEC_DATA = 0x20,
+    GOFF_EXEC_DATA = 0x01,
     /// Executable (code)
-    GOFF_EXEC_CODE = 0x40,
+    GOFF_EXEC_CODE = 0x02,
 });
 
 newtype!(

@@ -324,13 +324,15 @@ impl<'a> Writer<'a> {
         );
 
         // External reference to code.
-        // Behavioral attributes must match sysroot ERs emitted by the LLVM z/OS backend
-        // to avoid IEW2456E from the z/OS binder. Sysroot ERs carry:
-        //   byte[1] RMODE    = UNSPEC (0x00)  — not RMODE_64
-        //   byte[3] exec     = UNSPEC (0x00)  — ERs do NOT set Executable; only LDs do
-        //   byte[6] align    = QUADWORD(0x20) — sysroot ERs use 0x20, not 32-byte (0x28)
+        // Behavioral attributes must match working symbols.o ERs to avoid IEW2456E:
+        //   byte[0] AMODE    = AMODE_64 (0x04) — default from builder
+        //   byte[1] RMODE    = UNSPEC   (0x00)
+        //   byte[3] exec     = Code     (0x02) — GOFF_EXEC_CODE, bits[0:1] of byte[3]
+        //   byte[5] scope    = Export   (0x04) — GOFF_SCOPE_IMPORT_EXPORT
+        //   byte[6]          = XPLINK(0x20) | Align=Byte(0x00) = 0x20
         let attrs = BehavioralAttributesBuilder::new()
             .with_rmode(goff::GOFF_RMODE_UNSPEC)
+            .with_executable(goff::GOFF_EXEC_CODE)
             .with_binding_scope(goff::GOFF_SCOPE_IMPORT_EXPORT)
             .with_alignment(goff::GOFF_ALIGN_QUADWORD)
             .build();
