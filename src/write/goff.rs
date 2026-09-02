@@ -324,15 +324,16 @@ impl<'a> Writer<'a> {
         );
 
         // External reference to code.
-        // Behavioral attributes must match working symbols.o ERs to avoid IEW2456E:
+        // Behavioral attributes must match sysroot ERs to avoid IEW2456E:
         //   byte[0] AMODE    = AMODE_64 (0x04) — default from builder
         //   byte[1] RMODE    = UNSPEC   (0x00)
         //   byte[3] exec     = Code     (0x02) — GOFF_EXEC_CODE, bits[0:1] of byte[3]
-        //   byte[5] scope    = Export   (0x04) — GOFF_SCOPE_IMPORT_EXPORT
+        //   byte[5]          = Indirect(0x08) | Export(0x04) = 0x0C
         //   byte[6]          = XPLINK(0x20) | Align=Byte(0x00) = 0x20
         let attrs = BehavioralAttributesBuilder::new()
             .with_rmode(goff::GOFF_RMODE_UNSPEC)
             .with_executable(goff::GOFF_EXEC_CODE)
+            .with_indirect(true)
             .with_binding_scope(goff::GOFF_SCOPE_IMPORT_EXPORT)
             .with_alignment(goff::GOFF_ALIGN_QUADWORD)
             .build();
@@ -342,7 +343,23 @@ impl<'a> Writer<'a> {
     }
 
     pub fn write_er_to_data(&mut self, symbol_name: &[u8]) -> u32 {
-        return self.write_wsa_symbol(symbol_name, 0);
+        let mut er = self.get_esd_record(
+            goff::ESD_SYMTYPE_ER,
+            goff::ESD_NS_NORMAL_NAME,
+            self.cu_esdid,
+        );
+
+        // External reference to data — same structure as write_er_to_text but Exec=Data.
+        let attrs = BehavioralAttributesBuilder::new()
+            .with_rmode(goff::GOFF_RMODE_UNSPEC)
+            .with_executable(goff::GOFF_EXEC_DATA)
+            .with_indirect(true)
+            .with_binding_scope(goff::GOFF_SCOPE_IMPORT_EXPORT)
+            .with_alignment(goff::GOFF_ALIGN_QUADWORD)
+            .build();
+        er.behavioral_attributes = attrs;
+
+        return self.write_esd_record(&er, symbol_name);
     }
 
     pub fn write_wsa_symbol(&mut self, symbol_name: &[u8], symbol_length: u32) -> u32 {
@@ -1137,6 +1154,12 @@ impl BehavioralAttributesBuilder {
     /// Set the alignment.
     pub fn with_alignment(mut self, alignment: goff::AlignmentFlags) -> Self {
         self.alignment = alignment;
+        self
+    }
+
+    /// Set the indirect flag (byte[5] bit[3]).
+    pub fn with_indirect(mut self, indirect: bool) -> Self {
+        self.indirect = indirect;
         self
     }
 
