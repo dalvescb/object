@@ -328,7 +328,7 @@ impl<'a> Writer<'a> {
         //   byte[0] AMODE    = AMODE_64 (0x04) — default from builder
         //   byte[1] RMODE    = UNSPEC   (0x00)
         //   byte[3] exec     = Code     (0x02) — GOFF_EXEC_CODE, bits[0:1] of byte[3]
-        //   byte[5]          = Indirect(0x08) | Export(0x04) = 0x0C
+        //   byte[5]          = Indirect(0x10) | Export(0x04) = 0x14
         //   byte[6]          = XPLINK(0x20) | Align=Byte(0x00) = 0x20
         let attrs = BehavioralAttributesBuilder::new()
             .with_rmode(goff::GOFF_RMODE_UNSPEC)
@@ -1038,7 +1038,7 @@ pub struct BehavioralAttributesBuilder {
     // Byte 4: No prime (bit 3), binding strength (bits 4-7)
     no_prime: bool,
     binding_strength: goff::BindingStrength,
-    // Byte 5: Loading (bits 0-1), common (bit 2), indirect (bit 3), binding scope (bits 4-7)
+    // Byte 5: Loading (bits 6-7), common (bit 5), indirect (bit 4), binding scope (bits 0-3)
     loading: goff::LoadingBehavior,
     common: bool,
     indirect: bool,
@@ -1157,7 +1157,7 @@ impl BehavioralAttributesBuilder {
         self
     }
 
-    /// Set the indirect flag (byte[5] bit[3]).
+    /// Set the indirect flag (byte[5] bit[4] = 0x10).
     pub fn with_indirect(mut self, indirect: bool) -> Self {
         self.indirect = indirect;
         self
@@ -1185,10 +1185,10 @@ impl BehavioralAttributesBuilder {
         // Byte 4: No prime (bit 3), binding strength (bits 4-7)
         attrs[4] = (if self.no_prime { 0x08 } else { 0 }) | self.binding_strength.0;
 
-        // Byte 5: Loading (bits 0-1), common (bit 2), indirect (bit 3), binding scope (bits 4-7)
+        // Byte 5: Loading (bits 6-7), common (bit 5), indirect (bit 4), binding scope (bits 0-3)
         attrs[5] = self.loading.0
-            | (if self.common { 0x04 } else { 0 })
-            | (if self.indirect { 0x08 } else { 0 })
+            | (if self.common { 0x20 } else { 0 })
+            | (if self.indirect { 0x10 } else { 0 })
             | self.binding_scope.0;
 
         // Byte 6: Linkage (bit 2), alignment (bits 3-7)
