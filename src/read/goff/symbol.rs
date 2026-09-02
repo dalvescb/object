@@ -232,6 +232,11 @@ impl<'data> ObjectSymbol<'data> for GoffSymbol {
                 if (self.behavioral_attributes[5] & 0x40) != 0 {
                     return true;
                 }
+                // A length=0 PR with Section scope is an external data reference
+                // written by write_wsa_symbol for undefined data symbols.
+                if (self.behavioral_attributes[5] & 0x0F) == 0x01 {
+                    return true;
+                }
                 false
             }
             // External Reference (ER) - references an external symbol.

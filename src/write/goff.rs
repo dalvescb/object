@@ -343,23 +343,11 @@ impl<'a> Writer<'a> {
     }
 
     pub fn write_er_to_data(&mut self, symbol_name: &[u8]) -> u32 {
-        let mut er = self.get_esd_record(
-            goff::ESD_SYMTYPE_ER,
-            goff::ESD_NS_NORMAL_NAME,
-            self.cu_esdid,
-        );
-
-        // External reference to data — same structure as write_er_to_text but Exec=Data.
-        let attrs = BehavioralAttributesBuilder::new()
-            .with_rmode(goff::GOFF_RMODE_UNSPEC)
-            .with_executable(goff::GOFF_EXEC_DATA)
-            .with_indirect(true)
-            .with_binding_scope(goff::GOFF_SCOPE_IMPORT_EXPORT)
-            .with_alignment(goff::GOFF_ALIGN_QUADWORD)
-            .build();
-        er.behavioral_attributes = attrs;
-
-        return self.write_esd_record(&er, symbol_name);
+        // Undefined data symbols use a WSA ED+PR pair, not a plain ER.
+        // The z/OS binder resolves data references via the WSA merge mechanism:
+        // an ER would cause the binder to include the full defining compilation unit,
+        // whereas a WSA PR with length=0 lets the binder resolve via section merge.
+        return self.write_wsa_symbol(symbol_name, 0);
     }
 
     pub fn write_wsa_symbol(&mut self, symbol_name: &[u8], symbol_length: u32) -> u32 {
