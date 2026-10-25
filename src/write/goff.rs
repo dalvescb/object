@@ -381,12 +381,35 @@ impl<'a> Writer<'a> {
             )));
         };
 
+        let alignment = match section.align {
+            1 => goff::ALIGN_BYTE,
+            2 => goff::ALIGN_HALFWORD,
+            4 => goff::ALIGN_FULLWORD,
+            8 => goff::ALIGN_DOUBLEWORD,
+            16 => goff::ALIGN_QUADWORD,
+            32 => goff::ALIGN_32BYTE,
+            64 => goff::ALIGN_64BYTE,
+            128 => goff::ALIGN_128BYTE,
+            256 => goff::ALIGN_256BYTE,
+            512 => goff::ALIGN_512BYTE,
+            1024 => goff::ALIGN_1024BYTE,
+            2048 => goff::ALIGN_2KB,
+            4096 => goff::ALIGN_4KB,
+            _ => {
+                return Err(Error(format!(
+                    "invalid section `{}` align {}",
+                    section.name().unwrap_or(""),
+                    section.align
+                )));
+            }
+        };
+
         let name = &encode_name(&section.name)?;
         let mut ed = self.get_esd_record(goff::ESD_ST_ED, namespace, self.cu_esdid);
-        ed.length = U32::new(BE, section.data.len() as u32);
+        ed.length = U32::new(BE, section.size as u32);
         ed.flags = flags;
         ed.fill_byte_value = fill_byte_value;
-        ed.behavioral_attributes = behavioral_attributes;
+        ed.behavioral_attributes = behavioral_attributes.with_alignment(alignment);
         let ed_esdid = self.write_esd_record(&ed, name);
         self.section_esdid[section_id.0] = ed_esdid;
 
