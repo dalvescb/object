@@ -210,7 +210,7 @@ impl<'a> Object<'a> {
 
     /// Append zero-initialized data to an existing section. Returns the section offset of the data.
     ///
-    /// Must not be called for sections that contain initialized data.
+    /// If the section contains initialized data then zeros are appended.
     /// `align` must be a power of two.
     pub fn append_section_bss(&mut self, section: SectionId, size: u64, align: u64) -> u64 {
         self.sections[section.0].append_bss(size, align)
@@ -633,7 +633,7 @@ impl<'a> Object<'a> {
     ///
     /// Returns the section offset of the data.
     ///
-    /// Must not be called for sections that contain initialized data.
+    /// If the section contains initialized data then zeros are appended.
     /// `align` must be a power of two.
     pub fn add_symbol_bss(
         &mut self,
@@ -1001,10 +1001,10 @@ impl<'a> Section<'a> {
 
     /// Append uninitialized data to a section.
     ///
-    /// Must not be called for sections that contain initialized data.
+    /// If the section contains initialized data then zeros are appended.
+    ///
     /// `align` must be a power of two.
     pub fn append_bss(&mut self, size: u64, align: u64) -> u64 {
-        debug_assert!(self.is_bss());
         debug_assert_eq!(align & (align - 1), 0);
         if self.align < align {
             self.align = align;
@@ -1015,6 +1015,10 @@ impl<'a> Section<'a> {
             self.size = offset;
         }
         self.size += size;
+        if !self.is_bss() {
+            let data = self.data.to_mut();
+            data.resize(self.size as usize, 0);
+        }
         offset
     }
 

@@ -184,6 +184,36 @@ fn goff_multiple_debug_sections() {
     assert_eq!(&data1[..], &[0xBE, 0xEF]);
 }
 
+/// Test GOFF with standard section kinds that are combined.
+#[test]
+fn goff_standard_sections() {
+    let mut object = write::Object::new(BinaryFormat::Goff, Architecture::S390x, Endianness::Big);
+
+    let bss = object.section_id(write::StandardSection::UninitializedData);
+    object.append_section_bss(bss, 4, 8);
+
+    let data_rel = object.section_id(write::StandardSection::ReadOnlyDataWithRel);
+    object.append_section_data(data_rel, &[1, 2, 3, 4], 4);
+
+    let string = object.add_section(Vec::new(), b"C_STR".to_vec(), SectionKind::ReadOnlyString);
+    object.append_section_data(string, b"abc\0", 1);
+
+    let bytes = object.write().unwrap();
+
+    let object = read::File::parse(&*bytes).unwrap();
+    let sections: Vec<_> = object.sections().collect();
+    assert_eq!(sections.len(), 2);
+
+    assert_eq!(sections[0].kind(), SectionKind::Data);
+    assert_eq!(
+        &*sections[0].collected_data().unwrap(),
+        &[0, 0, 0, 0, 1, 2, 3, 4]
+    );
+
+    assert_eq!(sections[1].kind(), SectionKind::ReadOnlyData);
+    assert_eq!(&*sections[1].collected_data().unwrap(), b"abc\0");
+}
+
 #[test]
 fn goff_relocation_absolute() {
     let mut object = write::Object::new(BinaryFormat::Goff, Architecture::S390x, Endianness::Big);

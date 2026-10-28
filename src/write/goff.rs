@@ -56,26 +56,16 @@ impl<'a> Object<'a> {
         section: StandardSection,
     ) -> (&'static [u8], &'static [u8], SectionKind, SectionFlags) {
         match section {
-            StandardSection::Text => (&[], &C_CODE64, SectionKind::Text, SectionFlags::None),
-            StandardSection::Data => (&[], &C_WSA64, SectionKind::Data, SectionFlags::None),
-            StandardSection::ReadOnlyData | StandardSection::ReadOnlyString => (
-                &[],
-                &C_CODE64,
-                SectionKind::ReadOnlyData,
-                SectionFlags::None,
-            ),
-            StandardSection::ReadOnlyDataWithRel => (
-                &[],
-                &C_WSA64,
-                SectionKind::ReadOnlyDataWithRel,
-                SectionFlags::None,
-            ),
-            StandardSection::UninitializedData => (
-                &[],
-                &C_WSA64,
-                SectionKind::UninitializedData,
-                SectionFlags::None,
-            ),
+            StandardSection::Text
+            | StandardSection::ReadOnlyData
+            | StandardSection::ReadOnlyString => {
+                (&[], &C_CODE64, SectionKind::Text, SectionFlags::None)
+            }
+            StandardSection::Data
+            | StandardSection::ReadOnlyDataWithRel
+            | StandardSection::UninitializedData => {
+                (&[], &C_WSA64, SectionKind::Data, SectionFlags::None)
+            }
             StandardSection::Tls => {
                 // Unsupported section.
                 (&[], &[], SectionKind::Tls, SectionFlags::None)
@@ -102,8 +92,12 @@ impl<'a> Object<'a> {
     pub(crate) fn goff_section_flags(&self, section: &Section<'_>) -> SectionFlags {
         let (namespace, behavioral_attributes) = match section.kind {
             SectionKind::Text => (goff::ESD_NS_NORMAL_NAME, code_attrs()),
-            SectionKind::Data => (goff::ESD_NS_NORMAL_NAME, data_attrs()),
-            SectionKind::ReadOnlyData => (goff::ESD_NS_NORMAL_NAME, readonly_data_attrs()),
+            SectionKind::Data
+            | SectionKind::ReadOnlyDataWithRel
+            | SectionKind::UninitializedData => (goff::ESD_NS_NORMAL_NAME, data_attrs()),
+            SectionKind::ReadOnlyData | SectionKind::ReadOnlyString => {
+                (goff::ESD_NS_NORMAL_NAME, readonly_data_attrs())
+            }
             SectionKind::Debug => (goff::ESD_NS_PARTS, debug_attrs()),
             _ => return SectionFlags::None,
         };
