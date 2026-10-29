@@ -826,7 +826,7 @@ impl<'a> Writer<'a> {
 fn default_attrs() -> goff::BehavioralAttributes {
     goff::BehavioralAttributes::default()
         .with_amode(goff::AMODE_64)
-        .with_rmode(goff::RMODE_64)
+        .with_rmode(goff::RMODE_UNSPEC)
         .with_text_record_style(goff::TXT_RS_BYTE)
         .with_binding_algorithm(goff::ESD_BA_CONCATENATE)
         .with_tasking_behavior(goff::TASK_UNSPEC)
@@ -837,7 +837,7 @@ fn default_attrs() -> goff::BehavioralAttributes {
         .with_common(false)
         .with_indirect(false)
         .with_binding_scope(goff::ESD_BSC_UNSPEC)
-        .with_xplink(false)
+        .with_xplink(true)
         .with_alignment(goff::ALIGN_BYTE)
 }
 
